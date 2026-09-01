@@ -4,11 +4,12 @@ import datetime as dt
 from pathlib import Path
 from PyQt5.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
                              QLabel, QPushButton, QHBoxLayout, QFrame, QSizePolicy,
-                             QScrollArea, QGridLayout)
+                             QScrollArea, QGridLayout, QStackedWidget, QLineEdit, QComboBox)
 from PyQt5.QtGui import QFont, QColor, QPalette, QBrush, QPixmap
 from PyQt5.QtCore import QTimer, Qt, QPropertyAnimation, QEasingCurve
 
 import study_schedule as ss
+import schedule_manager
 
 class DashboardApp(QMainWindow):
     def __init__(self):
@@ -82,19 +83,22 @@ class DashboardApp(QMainWindow):
             QPushButton:hover { background-color: #F5F5F5; color: #004D40; }
         """
         
-        btn_dash = QPushButton("🪟 Dashboard")
-        btn_dash.setStyleSheet(nav_style)
-        btn_sch = QPushButton("📅 Schedule")
-        btn_sch.setStyleSheet(nav_style)
-        btn_prog = QPushButton("📈 Progress")
-        btn_prog.setStyleSheet(nav_style)
-        btn_res = QPushButton("📖 Resources")
-        btn_res.setStyleSheet(nav_style)
+        self.btn_dash = QPushButton("🪟 Dashboard")
+        self.btn_dash.setStyleSheet(nav_style)
+        self.btn_sch = QPushButton("📅 Schedule")
+        self.btn_sch.setStyleSheet(nav_style)
+        self.btn_prog = QPushButton("📈 Progress")
+        self.btn_prog.setStyleSheet(nav_style)
+        self.btn_res = QPushButton("📖 Resources")
+        self.btn_res.setStyleSheet(nav_style)
         
-        self.sidebar_layout.addWidget(btn_dash)
-        self.sidebar_layout.addWidget(btn_sch)
-        self.sidebar_layout.addWidget(btn_prog)
-        self.sidebar_layout.addWidget(btn_res)
+        self.sidebar_layout.addWidget(self.btn_dash)
+        self.sidebar_layout.addWidget(self.btn_sch)
+        self.sidebar_layout.addWidget(self.btn_prog)
+        self.sidebar_layout.addWidget(self.btn_res)
+        
+        self.btn_dash.clicked.connect(lambda: self.stacked_widget.setCurrentIndex(0))
+        self.btn_sch.clicked.connect(lambda: self.stacked_widget.setCurrentIndex(1))
         
         self.sidebar_layout.addStretch()
         
@@ -125,10 +129,10 @@ class DashboardApp(QMainWindow):
         self.btn_toggle.setStyleSheet("QPushButton { font-size: 24px; font-weight: bold; border: none; background: transparent; color: #424242; } QPushButton:hover { color: #004D40; }")
         self.btn_toggle.clicked.connect(self.toggle_sidebar)
         
-        self.lbl_hud = QLabel("30-DAY STUDY HUD")
+        self.lbl_hud = QLabel("MY STUDY HUD")
         self.lbl_hud.setStyleSheet("color: #004D40; font-weight: bold; font-size: 24px;")
         
-        self.lbl_day_top = QLabel("Day 1/30")
+        self.lbl_day_top = QLabel("Day 1")
         self.lbl_day_top.setStyleSheet("color: #424242; font-weight: bold; font-size: 13px;")
         self.lbl_day_top.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         
@@ -154,15 +158,24 @@ class DashboardApp(QMainWindow):
         self.right_layout.addSpacing(15)
         
         # Day and Date
-        self.lbl_day_big = QLabel("DAY 1 / 30")
+        self.lbl_day_big = QLabel("DAY 1")
         self.lbl_day_big.setStyleSheet("color: #E53935; font-weight: bold; font-size: 32px;")
         self.lbl_date = QLabel("Tuesday, 01 Sep 2026")
         self.lbl_date.setStyleSheet("color: #616161; font-size: 12px;")
         
         self.right_layout.addWidget(self.lbl_day_big)
         self.right_layout.addWidget(self.lbl_date)
-        self.right_layout.addSpacing(30)
+        self.right_layout.addSpacing(15)
+
+        # QStackedWidget for Views
+        self.stacked_widget = QStackedWidget()
+        self.right_layout.addWidget(self.stacked_widget)
         
+        # --- VIEW 0: Dashboard ---
+        self.dashboard_view = QWidget()
+        dash_vbox = QVBoxLayout(self.dashboard_view)
+        dash_vbox.setContentsMargins(0,0,0,0)
+
         # Content Split Layout (TODAY list vs NOW card)
         content_hbox = QHBoxLayout()
         
@@ -245,8 +258,15 @@ class DashboardApp(QMainWindow):
         content_hbox.addSpacing(30)
         content_hbox.addWidget(self.now_card, alignment=Qt.AlignTop)
         
-        self.right_layout.addLayout(content_hbox)
-        self.right_layout.addStretch()
+        dash_vbox.addLayout(content_hbox)
+        dash_vbox.addStretch()
+        
+        self.stacked_widget.addWidget(self.dashboard_view)
+        
+        # --- VIEW 1: Schedule Editor ---
+        self.schedule_editor_view = QWidget()
+        self.setup_schedule_editor()
+        self.stacked_widget.addWidget(self.schedule_editor_view)
         
         self.lbl_time = QLabel("TIME 16:36:18")
         self.lbl_time.setStyleSheet("color: #757575; font-weight: bold; font-size: 11px;")
@@ -254,6 +274,206 @@ class DashboardApp(QMainWindow):
         self.right_layout.addWidget(self.lbl_time)
         
         self.main_layout.addWidget(self.right_pane)
+
+    def setup_schedule_editor(self):
+        from PyQt5.QtWidgets import QScrollArea, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QLineEdit, QComboBox, QGroupBox
+        
+        self.editor_layout = QVBoxLayout(self.schedule_editor_view)
+        
+        lbl_title = QLabel("Schedule Editor")
+        lbl_title.setStyleSheet("color: #004D40; font-weight: bold; font-size: 20px;")
+        self.editor_layout.addWidget(lbl_title)
+        
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setStyleSheet("QScrollArea { border: none; background: transparent; }")
+        
+        scroll_content = QWidget()
+        scroll_content.setObjectName("ScrollContent")
+        scroll_content.setStyleSheet("#ScrollContent { background: transparent; }")
+        self.scroll_layout = QVBoxLayout(scroll_content)
+        
+        # SLOTS GROUP
+        self.slots_group = QGroupBox("Time Slots (Applies to all days)")
+        self.slots_group.setStyleSheet("QGroupBox { font-weight: bold; color: #424242; }")
+        self.slots_layout = QVBoxLayout()
+        self.slots_group.setLayout(self.slots_layout)
+        
+        btn_add_slot = QPushButton("+ Add Time Slot")
+        btn_add_slot.setStyleSheet("QPushButton { background-color: #E0E0E0; color: #424242; padding: 5px; border-radius: 3px; border: 1px solid #BDBDBD; } QPushButton:hover { background-color: #D6D6D6; }")
+        btn_add_slot.clicked.connect(lambda: self.ui_add_slot())
+        self.slots_layout.addWidget(btn_add_slot)
+        
+        # DAYS GROUP
+        self.days_group = QGroupBox("Daily Topics")
+        self.days_group.setStyleSheet("QGroupBox { font-weight: bold; color: #424242; }")
+        self.days_layout = QVBoxLayout()
+        self.days_group.setLayout(self.days_layout)
+        
+        day_selector_hbox = QHBoxLayout()
+        day_selector_hbox.addWidget(QLabel("Select Day:"))
+        self.day_combo = QComboBox()
+        self.day_combo.setStyleSheet("QComboBox { background-color: white; color: black; border: 1px solid #BDBDBD; padding: 2px; }")
+        self.day_combo.addItems([f"Day {i}" for i in range(1, 31)])
+        self.day_combo.currentIndexChanged.connect(self.ui_load_day_topics)
+        day_selector_hbox.addWidget(self.day_combo)
+        day_selector_hbox.addStretch()
+        self.days_layout.addLayout(day_selector_hbox)
+        
+        self.topics_container = QVBoxLayout()
+        self.days_layout.addLayout(self.topics_container)
+        
+        btn_add_topic = QPushButton("+ Add Topic to Day")
+        btn_add_topic.setStyleSheet("QPushButton { background-color: #E0E0E0; color: #424242; padding: 5px; border-radius: 3px; border: 1px solid #BDBDBD; } QPushButton:hover { background-color: #D6D6D6; }")
+        btn_add_topic.clicked.connect(lambda: self.ui_add_topic())
+        self.days_layout.addWidget(btn_add_topic)
+        
+        self.scroll_layout.addWidget(self.slots_group)
+        self.scroll_layout.addWidget(self.days_group)
+        self.scroll_layout.addStretch()
+        
+        scroll.setWidget(scroll_content)
+        self.editor_layout.addWidget(scroll)
+        
+        # Bottom controls
+        bottom_hbox = QHBoxLayout()
+        btn_save = QPushButton("Save Schedule")
+        btn_save.setStyleSheet("background-color: #004D40; color: white; padding: 10px; border-radius: 5px; font-weight: bold;")
+        btn_save.clicked.connect(self.save_schedule_from_ui)
+        bottom_hbox.addStretch()
+        bottom_hbox.addWidget(btn_save)
+        
+        self.editor_layout.addLayout(bottom_hbox)
+        
+        self.load_editor_data()
+
+    def ui_add_slot(self, start="00:00", end="01:00", name="New Subject"):
+        # If called by a signal without lambda, PyQt5 passes 'False' as start. Guard against it.
+        if isinstance(start, bool):
+            start = "00:00"
+        
+        from PyQt5.QtWidgets import QHBoxLayout, QLineEdit, QPushButton
+        hbox = QHBoxLayout()
+        start_edit = QLineEdit(str(start))
+        start_edit.setPlaceholderText("Start (HH:MM)")
+        start_edit.setFixedWidth(80)
+        end_edit = QLineEdit(end)
+        end_edit.setPlaceholderText("End (HH:MM)")
+        end_edit.setFixedWidth(80)
+        name_edit = QLineEdit(name)
+        name_edit.setPlaceholderText("Subject Name")
+        
+        btn_del = QPushButton("X")
+        btn_del.setFixedWidth(30)
+        btn_del.setStyleSheet("color: red; font-weight: bold;")
+        btn_del.clicked.connect(lambda: self.delete_layout_row(hbox, self.slots_layout))
+        
+        hbox.addWidget(start_edit)
+        hbox.addWidget(end_edit)
+        hbox.addWidget(name_edit)
+        hbox.addWidget(btn_del)
+        
+        # Insert before the "Add" button (which is at the end)
+        self.slots_layout.insertLayout(self.slots_layout.count() - 1, hbox)
+
+    def ui_add_topic(self, cat="Category", desc="Description"):
+        # Guard against PyQt5 passing a boolean 'False' from the clicked signal
+        if isinstance(cat, bool):
+            cat = "Category"
+            
+        from PyQt5.QtWidgets import QHBoxLayout, QLineEdit, QPushButton
+        hbox = QHBoxLayout()
+        cat_edit = QLineEdit(str(cat))
+        cat_edit.setPlaceholderText("Category (e.g. DSA)")
+        cat_edit.setFixedWidth(100)
+        desc_edit = QLineEdit(desc)
+        desc_edit.setPlaceholderText("Topic description")
+        
+        btn_del = QPushButton("X")
+        btn_del.setFixedWidth(30)
+        btn_del.setStyleSheet("color: red; font-weight: bold;")
+        btn_del.clicked.connect(lambda: self.delete_layout_row(hbox, self.topics_container))
+        
+        hbox.addWidget(cat_edit)
+        hbox.addWidget(desc_edit)
+        hbox.addWidget(btn_del)
+        self.topics_container.addLayout(hbox)
+        
+    def delete_layout_row(self, layout_to_delete, parent_layout):
+        while layout_to_delete.count():
+            item = layout_to_delete.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
+                widget.deleteLater()
+            else:
+                self.delete_layout_row(item.layout(), layout_to_delete)
+        parent_layout.removeItem(layout_to_delete)
+
+    def load_editor_data(self):
+        import schedule_manager
+        self.edit_slots, self.edit_days = schedule_manager.load_schedule()
+        
+        # Clear existing slots in UI
+        while self.slots_layout.count() > 1: # keep the add button
+            item = self.slots_layout.takeAt(0)
+            self.delete_layout_row(item, self.slots_layout)
+            
+        for s in self.edit_slots:
+            self.ui_add_slot(s[0], s[1], s[2])
+            
+        # Trigger day load
+        self.ui_load_day_topics()
+        
+    def ui_load_day_topics(self):
+        # Save current topics back to memory before switching
+        if hasattr(self, '_current_edit_day'):
+            topics = []
+            for i in range(self.topics_container.count()):
+                hbox = self.topics_container.itemAt(i)
+                if hbox:
+                    cat = hbox.itemAt(0).widget().text()
+                    desc = hbox.itemAt(1).widget().text()
+                    topics.append([cat, desc])
+            self.edit_days[self._current_edit_day] = topics
+
+        day_num = str(self.day_combo.currentIndex() + 1)
+        self._current_edit_day = day_num
+        
+        # Clear existing topics
+        while self.topics_container.count() > 0:
+            item = self.topics_container.takeAt(0)
+            self.delete_layout_row(item, self.topics_container)
+            
+        topics = self.edit_days.get(day_num, [])
+        for t in topics:
+            self.ui_add_topic(t[0], t[1])
+            
+    def save_schedule_from_ui(self):
+        import schedule_manager
+        import study_schedule as ss
+        
+        # Save currently visible topics
+        self.ui_load_day_topics()
+        
+        # Harvest slots
+        new_slots = []
+        for i in range(self.slots_layout.count() - 1):
+            hbox = self.slots_layout.itemAt(i)
+            if hbox:
+                start = hbox.itemAt(0).widget().text()
+                end = hbox.itemAt(1).widget().text()
+                name = hbox.itemAt(2).widget().text()
+                new_slots.append([start, end, name])
+                
+        schedule_manager.save_schedule(new_slots, self.edit_days)
+        
+        # Live update study_schedule variables
+        ss.SLOTS = [(s[0], s[1], s[2]) for s in new_slots]
+        ss.DAYS = {int(k): [(t[0], t[1]) for t in v] for k, v in self.edit_days.items()}
+        
+        self.update_ui()
+        from PyQt5.QtWidgets import QMessageBox
+        QMessageBox.information(self, "Success", "Schedule saved successfully!")
 
     def toggle_sidebar(self):
         target_width = 0 if self.sidebar_container.width() > 100 else 220
@@ -347,9 +567,11 @@ class DashboardApp(QMainWindow):
             current_pause_duration = 0
             
         d = ss.day_number(effective_now.date())
-        d = max(1, min(d, 30))
+        total_days = max(len(ss.DAYS), 1)
+        # We loop the day number if it exceeds total_days to support repeating weekly schedules!
+        d_display = ((d - 1) % total_days) + 1
         
-        if not is_paused and (1 <= d <= 30):
+        if not is_paused and (1 <= d_display <= total_days):
             import subprocess
             for start, end, name in ss.SLOTS:
                 target = ss.parse(start, effective_now.date())
@@ -361,13 +583,13 @@ class DashboardApp(QMainWindow):
                             subprocess.Popen([
                                 "notify-send", "-u", "normal",
                                 f"Study Time — {name}",
-                                f"Day {d}/30 • {start}–{end}\nStart your scheduled session now."
+                                f"Day {d_display} • {start}–{end}\nStart your scheduled session now."
                             ])
                         except Exception:
                             pass
                             
-        self.lbl_day_top.setText(f"Day {d}/30")
-        self.lbl_day_big.setText(f"DAY {d} / 30")
+        self.lbl_day_top.setText(f"Day {d_display} / {total_days}")
+        self.lbl_day_big.setText(f"DAY {d_display} / {total_days}")
         self.lbl_date.setText(now.strftime("%A, %d %b %Y"))
         self.lbl_time.setText(f"TIME {now.strftime('%H:%M:%S')}")
         
@@ -378,9 +600,19 @@ class DashboardApp(QMainWindow):
                 child.widget().deleteLater()
                 
         color_map = {"DSA": "#00897B", "MOBILE": "#43A047", "BANK": "#9C27B0"}
-        for cat, topic in ss.DAYS.get(d, []):
+        
+        # Dynamic fallback colors for custom subjects
+        fallback_colors = ["#E53935", "#1E88E5", "#F4511E", "#3949AB", "#FFB300", "#00ACC1", "#8E24AA", "#43A047"]
+        
+        for cat, topic in ss.DAYS.get(d_display, []):
             cat_upper = cat.upper()
-            col = color_map.get(cat_upper, "#00897B")
+            
+            if cat_upper in color_map:
+                col = color_map[cat_upper]
+            else:
+                # Assign a consistent dynamic color based on the category name's hash
+                col_idx = hash(cat_upper) % len(fallback_colors)
+                col = fallback_colors[col_idx]
             
             card = QFrame()
             card.setStyleSheet(f"""
