@@ -153,8 +153,22 @@ class DashboardApp(QMainWindow):
         d = ss.day_number(effective_now.date())
         d = max(1, min(d, 30))
         
-        if not is_paused:
-            ss.notify_if_needed(effective_now, d)
+        if not is_paused and (1 <= d <= 30):
+            import subprocess
+            for start, end, name in ss.SLOTS:
+                target = ss.parse(start, effective_now.date())
+                if effective_now >= target:
+                    stamp = Path("/tmp") / f"conky-study-{effective_now.date()}-{start.replace(':','')}"
+                    if not stamp.exists():
+                        stamp.touch()
+                        try:
+                            subprocess.Popen([
+                                "notify-send", "-u", "normal",
+                                f"Study Time — {name}",
+                                f"Day {d}/30 • {start}–{end}\nStart your scheduled session now."
+                            ])
+                        except Exception:
+                            pass
             
         self.lbl_day.setText(f"DAY {d} / 30")
         self.lbl_date.setText(now.strftime("%A, %d %b %Y"))
