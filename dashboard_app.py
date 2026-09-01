@@ -3,95 +3,44 @@ import sys
 import datetime as dt
 from pathlib import Path
 from PyQt5.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
-                             QLabel, QPushButton, QHBoxLayout, QFrame, QSizePolicy)
+                             QLabel, QPushButton, QHBoxLayout, QFrame, QSizePolicy,
+                             QScrollArea, QGridLayout)
 from PyQt5.QtGui import QFont, QColor, QPalette, QBrush, QPixmap
-from PyQt5.QtCore import QTimer, Qt
+from PyQt5.QtCore import QTimer, Qt, QPropertyAnimation, QEasingCurve
 
-# Import all data structures and logic from our existing script
 import study_schedule as ss
 
 class DashboardApp(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("30-Day Study Dashboard")
-        self.resize(760, 600)
+        self.resize(1000, 700)
         
-        # Central widget and layout
-        self.central_widget = QWidget()
+        # Enable translucent capability
+        self.setAttribute(Qt.WA_TranslucentBackground, True)
+        self.is_glass_mode = False
+        
+        self.setStyleSheet("""
+            QMainWindow {
+                background-color: transparent;
+            }
+            #MainCentralWidget {
+                border: 4px solid #9C27B0;
+                border-radius: 8px;
+                background-color: #F8F9FA;
+            }
+        """)
+        
+        self.central_widget = QFrame()
+        self.central_widget.setObjectName("MainCentralWidget")
         self.setCentralWidget(self.central_widget)
         
-        self.layout = QVBoxLayout(self.central_widget)
-        self.layout.setContentsMargins(40, 40, 40, 40)
-        self.layout.setSpacing(10)
+        self.main_layout = QHBoxLayout(self.central_widget)
+        self.main_layout.setContentsMargins(0, 0, 0, 0)
+        self.main_layout.setSpacing(0)
         
-        # Background
-        self.bg_label = QLabel(self.central_widget)
-        self.bg_label.lower()
-        self.bg_label.setStyleSheet("background-color: #F8F9FA;")
-        # (Optional) If you want the image back, you can set it here:
-        # pixmap = QPixmap(str(Path.home() / ".config/conky-study/card.png"))
-        # self.bg_label.setPixmap(pixmap)
-        
-        # Header
-        self.lbl_hud = QLabel("30-DAY STUDY HUD")
-        self.lbl_hud.setStyleSheet("color: #3949AB; font-weight: bold; font-size: 14px;")
-        
-        self.lbl_day = QLabel("DAY -- / 30")
-        self.lbl_day.setStyleSheet("color: #D81B60; font-weight: bold; font-size: 32px;")
-        
-        self.lbl_date = QLabel("--")
-        self.lbl_date.setStyleSheet("color: #757575; font-size: 14px;")
-        
-        self.layout.addWidget(self.lbl_hud)
-        self.layout.addWidget(self.lbl_day)
-        self.layout.addWidget(self.lbl_date)
-        
-        self.layout.addSpacing(20)
-        
-        self.lbl_today = QLabel("TODAY")
-        self.lbl_today.setStyleSheet("color: #00897B; font-weight: bold; font-size: 18px;")
-        self.layout.addWidget(self.lbl_today)
-        
-        self.topics_frame = QFrame()
-        self.topics_layout = QVBoxLayout(self.topics_frame)
-        self.topics_layout.setContentsMargins(0,0,0,0)
-        self.layout.addWidget(self.topics_frame)
-        
-        self.layout.addSpacing(20)
-        
-        self.lbl_now_next = QLabel("")
-        self.lbl_now_next.setWordWrap(True)
-        self.layout.addWidget(self.lbl_now_next)
-        
-        self.layout.addSpacing(20)
-        
-        # Pause Controls
-        self.pause_layout = QHBoxLayout()
-        self.btn_pause = QPushButton("Pause / Resume")
-        self.btn_pause.setFixedSize(150, 40)
-        self.btn_pause.setStyleSheet("""
-            QPushButton {
-                background-color: #E0E0E0; border-radius: 5px; font-weight: bold;
-            }
-            QPushButton:hover { background-color: #D6D6D6; }
-        """)
-        self.btn_pause.clicked.connect(self.toggle_pause)
-        
-        self.lbl_pause_status = QLabel("")
-        self.lbl_pause_status.setStyleSheet("color: #F4511E; font-size: 16px; font-weight: bold;")
-        
-        self.pause_layout.addWidget(self.btn_pause)
-        self.pause_layout.addWidget(self.lbl_pause_status)
-        self.pause_layout.addStretch()
-        
-        self.layout.addLayout(self.pause_layout)
-        
-        self.layout.addStretch()
-        
-        self.lbl_time = QLabel("TIME --:--:--")
-        self.lbl_time.setStyleSheet("color: #9E9E9E; font-size: 14px;")
-        self.lbl_time.setAlignment(Qt.AlignRight)
-        self.layout.addWidget(self.lbl_time)
+        self.setup_sidebar()
+        self.setup_right_pane()
         
         # Update timer
         self.timer = QTimer(self)
@@ -100,12 +49,259 @@ class DashboardApp(QMainWindow):
         
         self.update_ui()
         
-    def resizeEvent(self, event):
-        self.bg_label.resize(self.size())
-        super().resizeEvent(event)
+    def setup_sidebar(self):
+        self.sidebar_container = QFrame()
+        self.sidebar_container.setMaximumWidth(220)
+        self.sidebar_container.setStyleSheet("""
+            QFrame {
+                background-color: #FFFFFF;
+                border-right: 1px solid #E0E0E0;
+            }
+        """)
+        self.sidebar_layout = QVBoxLayout(self.sidebar_container)
+        self.sidebar_layout.setContentsMargins(20, 20, 20, 30)
+        self.sidebar_layout.setSpacing(15)
         
+        # Title
+        lbl_focus = QLabel("Focus Mode")
+        lbl_focus.setStyleSheet("border:none; color: #004D40; font-weight: bold; font-size: 16px;")
+        
+        lbl_deep = QLabel("Deep Work Session")
+        lbl_deep.setStyleSheet("border:none; color: #757575; font-size: 12px;")
+        
+        self.sidebar_layout.addWidget(lbl_focus)
+        self.sidebar_layout.addWidget(lbl_deep)
+        self.sidebar_layout.addSpacing(20)
+        
+        # Nav Buttons
+        nav_style = """
+            QPushButton {
+                text-align: left; padding: 10px; border: none; background: transparent;
+                font-size: 13px; color: #424242; border-radius: 5px;
+            }
+            QPushButton:hover { background-color: #F5F5F5; color: #004D40; }
+        """
+        
+        btn_dash = QPushButton("🪟 Dashboard")
+        btn_dash.setStyleSheet(nav_style)
+        btn_sch = QPushButton("📅 Schedule")
+        btn_sch.setStyleSheet(nav_style)
+        btn_prog = QPushButton("📈 Progress")
+        btn_prog.setStyleSheet(nav_style)
+        btn_res = QPushButton("📖 Resources")
+        btn_res.setStyleSheet(nav_style)
+        
+        self.sidebar_layout.addWidget(btn_dash)
+        self.sidebar_layout.addWidget(btn_sch)
+        self.sidebar_layout.addWidget(btn_prog)
+        self.sidebar_layout.addWidget(btn_res)
+        
+        self.sidebar_layout.addStretch()
+        
+        # Start Session Button
+        btn_start = QPushButton("Start Session")
+        btn_start.setFixedSize(160, 40)
+        btn_start.setStyleSheet("""
+            QPushButton {
+                background-color: #004D40; color: white; border-radius: 8px; font-weight: bold; font-size: 13px;
+            }
+            QPushButton:hover { background-color: #00695C; }
+        """)
+        self.sidebar_layout.addWidget(btn_start, alignment=Qt.AlignCenter)
+        
+        self.main_layout.addWidget(self.sidebar_container)
+        
+    def setup_right_pane(self):
+        self.right_pane = QWidget()
+        self.right_pane.setStyleSheet("background-color: #F8F9FA;")
+        
+        self.right_layout = QVBoxLayout(self.right_pane)
+        self.right_layout.setContentsMargins(30, 20, 30, 20)
+        
+        # Hamburger Toggle & Top Header
+        top_hbox = QHBoxLayout()
+        self.btn_toggle = QPushButton("≡")
+        self.btn_toggle.setFixedSize(40, 40)
+        self.btn_toggle.setStyleSheet("QPushButton { font-size: 24px; font-weight: bold; border: none; background: transparent; color: #424242; } QPushButton:hover { color: #004D40; }")
+        self.btn_toggle.clicked.connect(self.toggle_sidebar)
+        
+        self.lbl_hud = QLabel("30-DAY STUDY HUD")
+        self.lbl_hud.setStyleSheet("color: #004D40; font-weight: bold; font-size: 24px;")
+        
+        self.lbl_day_top = QLabel("Day 1/30")
+        self.lbl_day_top.setStyleSheet("color: #424242; font-weight: bold; font-size: 13px;")
+        self.lbl_day_top.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        
+        self.btn_glass = QPushButton("⚪ Glass Mode")
+        self.btn_glass.setFixedSize(100, 30)
+        self.btn_glass.setStyleSheet("QPushButton { font-size: 12px; font-weight: bold; border-radius: 15px; background: #E0E0E0; color: #424242; border: none; } QPushButton:hover { background: #D6D6D6; }")
+        self.btn_glass.clicked.connect(self.toggle_glass)
+        
+        top_hbox.addWidget(self.btn_toggle)
+        top_hbox.addWidget(self.lbl_hud)
+        top_hbox.addStretch()
+        top_hbox.addWidget(self.btn_glass)
+        top_hbox.addSpacing(15)
+        top_hbox.addWidget(self.lbl_day_top)
+        
+        # A thin horizontal line
+        h_line = QFrame()
+        h_line.setFrameShape(QFrame.HLine)
+        h_line.setStyleSheet("color: #E0E0E0;")
+        
+        self.right_layout.addLayout(top_hbox)
+        self.right_layout.addWidget(h_line)
+        self.right_layout.addSpacing(15)
+        
+        # Day and Date
+        self.lbl_day_big = QLabel("DAY 1 / 30")
+        self.lbl_day_big.setStyleSheet("color: #E53935; font-weight: bold; font-size: 32px;")
+        self.lbl_date = QLabel("Tuesday, 01 Sep 2026")
+        self.lbl_date.setStyleSheet("color: #616161; font-size: 12px;")
+        
+        self.right_layout.addWidget(self.lbl_day_big)
+        self.right_layout.addWidget(self.lbl_date)
+        self.right_layout.addSpacing(30)
+        
+        # Content Split Layout (TODAY list vs NOW card)
+        content_hbox = QHBoxLayout()
+        
+        # Left side: TODAY
+        today_vbox = QVBoxLayout()
+        lbl_today = QLabel("TODAY")
+        lbl_today.setStyleSheet("color: #00897B; font-weight: bold; font-size: 16px;")
+        today_vbox.addWidget(lbl_today)
+        today_vbox.addSpacing(10)
+        
+        self.topics_layout = QVBoxLayout()
+        self.topics_layout.setSpacing(10)
+        today_vbox.addLayout(self.topics_layout)
+        today_vbox.addStretch()
+        
+        # Right side: NOW card
+        self.now_card = QFrame()
+        self.now_card.setFixedWidth(300)
+        self.now_card.setStyleSheet("""
+            QFrame#NowCard {
+                background-color: #FFFFFF;
+                border: 1px solid #E0E0E0;
+                border-radius: 8px;
+            }
+        """)
+        self.now_card.setObjectName("NowCard")
+        
+        now_vbox = QVBoxLayout(self.now_card)
+        now_vbox.setContentsMargins(20, 20, 20, 20)
+        
+        lbl_now_header = QLabel("▶ NOW")
+        lbl_now_header.setStyleSheet("color: #E53935; font-weight: bold; font-size: 14px; border: none;")
+        
+        self.lbl_now_title = QLabel("Bank — English + Computer/GA")
+        self.lbl_now_title.setWordWrap(True)
+        self.lbl_now_title.setStyleSheet("color: #212121; font-weight: bold; font-size: 16px; border: none;")
+        
+        now_card_hline = QFrame()
+        now_card_hline.setFrameShape(QFrame.HLine)
+        now_card_hline.setStyleSheet("color: #F5F5F5; border: none;")
+        
+        self.lbl_now_time_rem = QLabel("01h 08m remaining")
+        self.lbl_now_time_rem.setStyleSheet("border: none; font-size: 12px; color: #616161;")
+        
+        self.lbl_now_bounds = QLabel("🕒 15:45 - 17:45")
+        self.lbl_now_bounds.setStyleSheet("border: none; font-size: 11px; color: #757575;")
+        
+        now_vbox.addWidget(lbl_now_header)
+        now_vbox.addSpacing(10)
+        now_vbox.addWidget(self.lbl_now_title)
+        now_vbox.addSpacing(10)
+        now_vbox.addWidget(now_card_hline)
+        now_vbox.addSpacing(10)
+        now_vbox.addWidget(self.lbl_now_time_rem)
+        now_vbox.addWidget(self.lbl_now_bounds)
+        now_vbox.addSpacing(15)
+        
+        # Pause Controls in NOW Card
+        pause_hbox = QHBoxLayout()
+        self.btn_pause = QPushButton("Pause")
+        self.btn_pause.setFixedSize(100, 35)
+        self.btn_pause.setStyleSheet("""
+            QPushButton {
+                background-color: #E53935; color: white; border-radius: 4px; font-weight: bold; border: none;
+            }
+            QPushButton:hover { background-color: #D32F2F; }
+        """)
+        self.btn_pause.clicked.connect(self.toggle_pause)
+        
+        self.lbl_shift = QLabel("Shift today: +0s")
+        self.lbl_shift.setStyleSheet("border: none; font-size: 11px; color: #757575;")
+        
+        pause_hbox.addWidget(self.btn_pause)
+        pause_hbox.addWidget(self.lbl_shift)
+        pause_hbox.addStretch()
+        
+        now_vbox.addLayout(pause_hbox)
+        
+        content_hbox.addLayout(today_vbox, stretch=2)
+        content_hbox.addSpacing(30)
+        content_hbox.addWidget(self.now_card, alignment=Qt.AlignTop)
+        
+        self.right_layout.addLayout(content_hbox)
+        self.right_layout.addStretch()
+        
+        self.lbl_time = QLabel("TIME 16:36:18")
+        self.lbl_time.setStyleSheet("color: #757575; font-weight: bold; font-size: 11px;")
+        self.lbl_time.setAlignment(Qt.AlignRight)
+        self.right_layout.addWidget(self.lbl_time)
+        
+        self.main_layout.addWidget(self.right_pane)
+
+    def toggle_sidebar(self):
+        target_width = 0 if self.sidebar_container.width() > 100 else 220
+        self.anim = QPropertyAnimation(self.sidebar_container, b"maximumWidth")
+        self.anim.setDuration(300)
+        self.anim.setStartValue(self.sidebar_container.width())
+        self.anim.setEndValue(target_width)
+        self.anim.setEasingCurve(QEasingCurve.InOutQuad)
+        self.anim.start()
+        
+    def toggle_glass(self):
+        self.is_glass_mode = not self.is_glass_mode
+        if self.is_glass_mode:
+            self.btn_glass.setText("⚫ Solid Mode")
+            self.setStyleSheet("""
+                QMainWindow { background-color: transparent; }
+                #MainCentralWidget {
+                    border: 4px solid rgba(156, 39, 176, 180);
+                    border-radius: 8px;
+                    background-color: rgba(248, 249, 250, 150);
+                }
+            """)
+            self.right_pane.setStyleSheet("background-color: transparent;")
+            self.sidebar_container.setStyleSheet("""
+                QFrame {
+                    background-color: rgba(255, 255, 255, 100);
+                    border-right: 1px solid rgba(224, 224, 224, 150);
+                }
+            """)
+        else:
+            self.btn_glass.setText("⚪ Glass Mode")
+            self.setStyleSheet("""
+                QMainWindow { background-color: transparent; }
+                #MainCentralWidget {
+                    border: 4px solid #9C27B0;
+                    border-radius: 8px;
+                    background-color: #F8F9FA;
+                }
+            """)
+            self.right_pane.setStyleSheet("background-color: #F8F9FA;")
+            self.sidebar_container.setStyleSheet("""
+                QFrame {
+                    background-color: #FFFFFF;
+                    border-right: 1px solid #E0E0E0;
+                }
+            """)
+            
     def toggle_pause(self):
-        # We can just call the toggle logic
         now = dt.datetime.now()
         today_str = str(now.date())
         state = ss.get_state()
@@ -117,7 +313,7 @@ class DashboardApp(QMainWindow):
             state = {"date": today_str, "shift_seconds": 0, "is_paused": False, "pause_start_timestamp": 0}
             
         if was_paused_yesterday:
-            pass # just leaves it unpaused
+            pass
         elif state["is_paused"]:
             pause_duration = now.timestamp() - state["pause_start_timestamp"]
             state["shift_seconds"] += max(0, pause_duration)
@@ -169,25 +365,48 @@ class DashboardApp(QMainWindow):
                             ])
                         except Exception:
                             pass
-            
-        self.lbl_day.setText(f"DAY {d} / 30")
+                            
+        self.lbl_day_top.setText(f"Day {d}/30")
+        self.lbl_day_big.setText(f"DAY {d} / 30")
         self.lbl_date.setText(now.strftime("%A, %d %b %Y"))
-        self.lbl_time.setText(f"TIME  {now.strftime('%H:%M:%S')}")
+        self.lbl_time.setText(f"TIME {now.strftime('%H:%M:%S')}")
         
-        # Topics
-        # Clear old topics
+        # Populate topics cards
         while self.topics_layout.count():
             child = self.topics_layout.takeAt(0)
             if child.widget():
                 child.widget().deleteLater()
                 
-        color_map = {"DSA": "#1E88E5", "MOBILE": "#43A047", "BANK": "#8E24AA"}
+        color_map = {"DSA": "#00897B", "MOBILE": "#43A047", "BANK": "#9C27B0"}
         for cat, topic in ss.DAYS.get(d, []):
             cat_upper = cat.upper()
             col = color_map.get(cat_upper, "#00897B")
-            lbl = QLabel(f'<span style="color:{col}; font-weight:bold; font-size:16px;">{cat_upper}</span> &nbsp;&nbsp; <span style="color:#424242; font-size:14px;">{topic}</span>')
-            lbl.setWordWrap(True)
-            self.topics_layout.addWidget(lbl)
+            
+            card = QFrame()
+            card.setStyleSheet(f"""
+                QFrame {{
+                    background-color: #FFFFFF;
+                    border: 1px solid #E0E0E0;
+                    border-radius: 4px;
+                    border-left: 4px solid {col};
+                }}
+            """)
+            
+            card_layout = QHBoxLayout(card)
+            card_layout.setContentsMargins(15, 15, 15, 15)
+            
+            lbl_cat = QLabel(cat_upper)
+            lbl_cat.setStyleSheet(f"color: {col}; font-weight: bold; font-size: 13px; border: none;")
+            lbl_cat.setFixedWidth(80)
+            
+            lbl_top = QLabel(topic)
+            lbl_top.setStyleSheet("color: #424242; font-size: 13px; border: none;")
+            lbl_top.setWordWrap(True)
+            
+            card_layout.addWidget(lbl_cat)
+            card_layout.addWidget(lbl_top)
+            
+            self.topics_layout.addWidget(card)
             
         cur = ss.current_slot(effective_now)
         nxt = ss.next_slot(effective_now)
@@ -195,39 +414,50 @@ class DashboardApp(QMainWindow):
         if cur:
             start, end, name, rem = cur
             m = max(0, int(rem.total_seconds() // 60))
-            self.lbl_now_next.setText(f'<span style="color:#E53935; font-weight:bold; font-size:18px;">▶ NOW</span> &nbsp;&nbsp; <span style="color:#333333; font-weight:bold; font-size:18px;">{name}</span><br><span style="color:#555555; font-size:14px;">{start} ─ {end}</span> &nbsp;&nbsp; <span style="color:#757575; font-size:14px;">{m//60:02d}h {m%60:02d}m remaining</span>')
+            self.now_card.show()
+            self.lbl_now_title.setText(name)
+            self.lbl_now_bounds.setText(f"🕒 {start} - {end}")
+            
+            if m >= 60:
+                self.lbl_now_time_rem.setText(f'<span style="font-size:24px; font-weight:bold; color:#212121;">{m//60:02d}h {m%60:02d}m</span> <span style="font-size:12px; color:#757575;">remaining</span>')
+            else:
+                self.lbl_now_time_rem.setText(f'<span style="font-size:24px; font-weight:bold; color:#212121;">{m:02d}m</span> <span style="font-size:12px; color:#757575;">remaining</span>')
+                
         elif nxt:
             start, end, name, until = nxt
             m = max(0, int(until.total_seconds() // 60))
-            self.lbl_now_next.setText(f'<span style="color:#F4511E; font-weight:bold; font-size:18px;">⏭ NEXT</span> &nbsp;&nbsp; <span style="color:#333333; font-weight:bold; font-size:18px;">{name}</span><br><span style="color:#555555; font-size:14px;">{start} ─ {end}</span> &nbsp;&nbsp; <span style="color:#757575; font-size:14px;">starts in {m//60:02d}h {m%60:02d}m</span>')
+            self.now_card.show()
+            self.lbl_now_title.setText(name)
+            self.lbl_now_bounds.setText(f"🕒 {start} - {end}")
+            
+            if m >= 60:
+                self.lbl_now_time_rem.setText(f'<span style="font-size:24px; font-weight:bold; color:#212121;">{m//60:02d}h {m%60:02d}m</span> <span style="font-size:12px; color:#757575;">starts in</span>')
+            else:
+                self.lbl_now_time_rem.setText(f'<span style="font-size:24px; font-weight:bold; color:#212121;">{m:02d}m</span> <span style="font-size:12px; color:#757575;">starts in</span>')
         else:
-            self.lbl_now_next.setText('<span style="color:#757575; font-size:16px;">✓ Today\'s scheduled study blocks are complete.</span>')
+            self.now_card.hide()
             
         total_shift = int(shift_seconds + current_pause_duration)
-        
-        status_text = ""
-        if is_paused:
-            ph, p_rem = divmod(int(current_pause_duration), 3600)
-            pm, ps = divmod(p_rem, 60)
-            status_text += f'⏸ PAUSED  <span style="color:#333333;">{ph:02d}:{pm:02d}:{ps:02d}</span><br>'
-            
+        shift_str = ""
         if total_shift > 0:
             th, t_rem = divmod(total_shift, 3600)
             tm, ts = divmod(t_rem, 60)
-            shift_str = ""
             if th > 0: shift_str += f"{th}h "
             if tm > 0 or th > 0: shift_str += f"{tm}m "
             shift_str += f"{ts}s"
-            status_text += f'<span style="color:#757575; font-size:14px; font-weight:normal;">Shift today: +{shift_str}</span>'
+            self.lbl_shift.setText(f"Shift today: +{shift_str}")
+        else:
+            self.lbl_shift.setText("Shift today: 0s")
             
-        self.lbl_pause_status.setText(status_text)
-        
         if is_paused:
+            ph, p_rem = divmod(int(current_pause_duration), 3600)
+            pm, ps = divmod(p_rem, 60)
+            self.lbl_shift.setText(f"PAUSED: {ph:02d}:{pm:02d}:{ps:02d} | " + self.lbl_shift.text())
             self.btn_pause.setText("Resume")
-            self.btn_pause.setStyleSheet("QPushButton { background-color: #4CAF50; color: white; border-radius: 5px; font-weight: bold; }")
+            self.btn_pause.setStyleSheet("QPushButton { background-color: #4CAF50; color: white; border-radius: 4px; font-weight: bold; border: none; } QPushButton:hover { background-color: #388E3C; }")
         else:
             self.btn_pause.setText("Pause")
-            self.btn_pause.setStyleSheet("QPushButton { background-color: #F44336; color: white; border-radius: 5px; font-weight: bold; }")
+            self.btn_pause.setStyleSheet("QPushButton { background-color: #E53935; color: white; border-radius: 4px; font-weight: bold; border: none; } QPushButton:hover { background-color: #D32F2F; }")
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
