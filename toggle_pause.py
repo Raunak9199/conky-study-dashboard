@@ -3,29 +3,36 @@ import json
 import os
 import datetime as dt
 import time
+import fcntl
 from pathlib import Path
 
 STATE_FILE = Path.home() / ".config/conky-study/state.json"
+LOCK_FILE = Path.home() / ".config/conky-study/state.lock"
 
-def load_state():
-    if STATE_FILE.exists():
-        try:
+def get_state():
+    state = None
+    with open(LOCK_FILE, "w") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        if STATE_FILE.exists():
             with open(STATE_FILE, "r") as f:
-                return json.load(f)
-        except Exception:
-            pass
-    return None
+                try: state = json.load(f)
+                except Exception: pass
+        fcntl.flock(lock, fcntl.LOCK_UN)
+    return state
 
 def save_state(state):
     STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
-    with open(STATE_FILE, "w") as f:
-        json.dump(state, f, indent=2)
+    with open(LOCK_FILE, "w") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        with open(STATE_FILE, "w") as f:
+            json.dump(state, f, indent=2)
+        fcntl.flock(lock, fcntl.LOCK_UN)
 
 def main():
     now = dt.datetime.now()
     today_str = str(now.date())
     
-    state = load_state()
+    state = get_state()
     
     was_paused_yesterday = False
     

@@ -26,7 +26,7 @@ if [ ! -f "$CONFIG_DIR/card_small.png" ]; then
     elif command -v magick >/dev/null 2>&1; then
         magick "$CONFIG_DIR/card_large.png" -resize 500x310\! "$CONFIG_DIR/card_small.png"
     else
-        echo "ImageMagick not installed. Stretching existing card."
+        echo "ImageMagick not installed. Falling back to stretch."
         cp "$CONFIG_DIR/card_large.png" "$CONFIG_DIR/card_small.png"
     fi
 fi
@@ -35,27 +35,12 @@ if [ "$CURRENT" = "large" ]; then
     # Switch to small
     echo "small" > "$SIZE_FILE"
     echo "Switched to Small mode."
-    
-    # Update conky.conf
-    sed -i 's/minimum_width = 760/minimum_width = 500/g' "$CONKY_CONF"
-    sed -i 's/maximum_width = 760/maximum_width = 500/g' "$CONKY_CONF"
-    sed -i 's/minimum_height = 470/minimum_height = 310/g' "$CONKY_CONF"
-    sed -i 's/maximum_height = 470/maximum_height = 310/g' "$CONKY_CONF"
-    sed -i 's/card.png -p 0,0 -s 760x470/card_small.png -p 0,0 -s 500x310/g' "$CONKY_CONF"
-    sed -i 's/card_large.png -p 0,0 -s 760x470/card_small.png -p 0,0 -s 500x310/g' "$CONKY_CONF"
-
+    cp "$CONFIG_DIR/conky_small.conf" "$CONKY_CONF"
 else
     # Switch to large
     echo "large" > "$SIZE_FILE"
     echo "Switched to Large mode."
-    
-    # Update conky.conf
-    sed -i 's/minimum_width = 500/minimum_width = 760/g' "$CONKY_CONF"
-    sed -i 's/maximum_width = 500/maximum_width = 760/g' "$CONKY_CONF"
-    sed -i 's/minimum_height = 310/minimum_height = 470/g' "$CONKY_CONF"
-    sed -i 's/maximum_height = 310/maximum_height = 470/g' "$CONKY_CONF"
-    sed -i 's/card_small.png -p 0,0 -s 500x310/card_large.png -p 0,0 -s 760x470/g' "$CONKY_CONF"
-    sed -i 's/card.png -p 0,0 -s 500x310/card_large.png -p 0,0 -s 760x470/g' "$CONKY_CONF"
+    cp "$CONFIG_DIR/conky_large.conf" "$CONKY_CONF"
 fi
 
 # Restart conky

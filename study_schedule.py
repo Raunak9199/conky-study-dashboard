@@ -197,42 +197,36 @@ def next_slot(now):
             return (start, end, name, a - now)
     return None
 
-def notify_if_needed(now, day):
-    if not (1 <= day <= 30):
-        return
-    for start, end, name in SLOTS:
-        target = parse(start, now.date())
-        if abs((now - target).total_seconds()) <= 30:
-            stamp = Path("/tmp") / f"conky-study-{now.date()}-{start.replace(':','')}"
-            if not stamp.exists():
-                stamp.touch()
-                try:
-                    subprocess.Popen([
-                        "notify-send", "-u", "normal",
-                        f"Study Time — {name}",
-                        f"Day {day}/30 • {start}–{end}\nStart your scheduled session now."
-                    ])
-                except Exception:
-                    pass
-
 import json
+import fcntl
 
 STATE_FILE = Path.home() / ".config/conky-study/state.json"
+LOCK_FILE = Path.home() / ".config/conky-study/state.lock"
 
-def load_state():
-    if STATE_FILE.exists():
-        try:
+def get_state():
+    state = None
+    with open(LOCK_FILE, "w") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        if STATE_FILE.exists():
             with open(STATE_FILE, "r") as f:
-                return json.load(f)
-        except Exception:
-            pass
-    return None
+                try: state = json.load(f)
+                except Exception: pass
+        fcntl.flock(lock, fcntl.LOCK_UN)
+    return state
+
+def save_state(state):
+    STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
+    with open(LOCK_FILE, "w") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        with open(STATE_FILE, "w") as f:
+            json.dump(state, f, indent=2)
+        fcntl.flock(lock, fcntl.LOCK_UN)
 
 def display():
     now = dt.datetime.now()
     today_str = str(now.date())
     
-    state = load_state()
+    state = get_state()
     # Reset if missing or new day
     if not state or state.get("date") != today_str:
         state = {
@@ -241,6 +235,7 @@ def display():
             "is_paused": False,
             "pause_start_timestamp": 0
         }
+        save_state(state)
         
     shift_seconds = state.get("shift_seconds", 0)
     is_paused = state.get("is_paused", False)
@@ -259,8 +254,23 @@ def display():
     if d > 30:
         d = 30
 
-    if not is_paused:
-        notify_if_needed(effective_now, d)
+    # Notification Logic
+    if not is_paused and (1 <= d <= 30):
+        for start, end, name in SLOTS:
+            target = parse(start, effective_now.date())
+            # Trigger if effective time has crossed the scheduled start
+            if effective_now >= target:
+                stamp = Path("/tmp") / f"conky-study-{effective_now.date()}-{start.replace(':','')}"
+                if not stamp.exists():
+                    stamp.touch()
+                    try:
+                        subprocess.Popen([
+                            "notify-send", "-u", "normal",
+                            f"Study Time — {name}",
+                            f"Day {d}/30 • {start}–{end}\nStart your scheduled session now."
+                        ])
+                    except Exception:
+                        pass
         
     topics = DAYS.get(d, [])
     cur = current_slot(effective_now)

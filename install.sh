@@ -5,7 +5,10 @@ sudo apt update
 sudo apt install -y conky-all libnotify-bin
 
 mkdir -p "$HOME/.config/conky-study"
-cp "$(dirname "$0")/conky.conf" "$HOME/.config/conky-study/conky.conf"
+cp "$(dirname "$0")/conky_large.conf" "$HOME/.config/conky-study/conky_large.conf"
+cp "$(dirname "$0")/conky_small.conf" "$HOME/.config/conky-study/conky_small.conf"
+# Initialize with large by default
+cp "$HOME/.config/conky-study/conky_large.conf" "$HOME/.config/conky-study/conky.conf"
 cp "$(dirname "$0")/study_schedule.py" "$HOME/.config/conky-study/study_schedule.py"
 cp "$(dirname "$0")/toggle_pause.py" "$HOME/.config/conky-study/toggle_pause.py"
 cp "$(dirname "$0")/toggle_size.sh" "$HOME/.config/conky-study/toggle_size.sh"
