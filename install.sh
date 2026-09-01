@@ -18,7 +18,10 @@ cp -r "$(dirname "$0")/.venv" "$HOME/.config/conky-study/.venv"
 chmod +x "$HOME/.config/conky-study/"*.py
 
 mkdir -p "$HOME/.config/autostart"
-cat > "$HOME/.config/autostart/study-dashboard.desktop" <<EOF
+read -p "Do you want to create a desktop autostart entry so the dashboard launches on boot? (y/n): " create_desktop
+case "$create_desktop" in
+  y|Y )
+    cat > "$HOME/.config/autostart/study-dashboard.desktop" <<EOF
 [Desktop Entry]
 Type=Application
 Name=Study Dashboard
@@ -27,6 +30,13 @@ Exec=$HOME/.config/conky-study/.venv/bin/python $HOME/.config/conky-study/dashbo
 Terminal=false
 X-GNOME-Autostart-enabled=true
 EOF
+    echo "Desktop entry created."
+    ;;
+  * )
+    echo "Skipping desktop entry creation."
+    rm -f "$HOME/.config/autostart/study-dashboard.desktop"
+    ;;
+esac
 
 # Kill conky if it was running previously
 pkill conky 2>/dev/null || true
