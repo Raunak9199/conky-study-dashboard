@@ -7,8 +7,11 @@ sudo apt install -y conky-all libnotify-bin
 mkdir -p "$HOME/.config/conky-study"
 cp "$(dirname "$0")/conky.conf" "$HOME/.config/conky-study/conky.conf"
 cp "$(dirname "$0")/study_schedule.py" "$HOME/.config/conky-study/study_schedule.py"
+cp "$(dirname "$0")/toggle_pause.py" "$HOME/.config/conky-study/toggle_pause.py"
+cp "$(dirname "$0")/toggle_size.sh" "$HOME/.config/conky-study/toggle_size.sh"
 cp "$(dirname "$0")/card.png" "$HOME/.config/conky-study/card.png"
-chmod +x "$HOME/.config/conky-study/study_schedule.py"
+chmod +x "$HOME/.config/conky-study/"*.py
+chmod +x "$HOME/.config/conky-study/"*.sh
 
 mkdir -p "$HOME/.config/autostart"
 cat > "$HOME/.config/autostart/conky-study.desktop" <<EOF
