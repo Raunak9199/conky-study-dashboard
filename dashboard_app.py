@@ -861,8 +861,25 @@ class DashboardApp(QMainWindow):
             self.btn_pause.setText("Pause")
             self.btn_pause.setStyleSheet("QPushButton { background-color: #E53935; color: white; border-radius: 4px; font-weight: bold; border: none; } QPushButton:hover { background-color: #D32F2F; }")
 
+    def closeEvent(self, event):
+        if hasattr(self, 'sync_server_proc') and self.sync_server_proc:
+            self.sync_server_proc.terminate()
+            try:
+                self.sync_server_proc.wait(timeout=1)
+            except Exception:
+                self.sync_server_proc.kill()
+        event.accept()
+
 if __name__ == "__main__":
     app = QApplication(sys.argv)
     window = DashboardApp()
+    
+    import subprocess
+    # Start Sync Server
+    try:
+        window.sync_server_proc = subprocess.Popen([sys.executable, "sync_server.py"])
+    except Exception as e:
+        print(f"Failed to start sync server: {e}")
+        
     window.show()
     sys.exit(app.exec_())
