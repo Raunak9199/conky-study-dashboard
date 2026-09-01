@@ -310,15 +310,26 @@ class DashboardApp(QMainWindow):
         self.days_layout = QVBoxLayout()
         self.days_group.setLayout(self.days_layout)
         
-        day_selector_hbox = QHBoxLayout()
-        day_selector_hbox.addWidget(QLabel("Select Day:"))
+        mode_hbox = QHBoxLayout()
+        mode_hbox.addWidget(QLabel("Schedule Mode:"))
+        self.mode_combo = QComboBox()
+        self.mode_combo.setStyleSheet("QComboBox { background-color: white; color: black; border: 1px solid #BDBDBD; padding: 2px; }")
+        self.mode_combo.addItems(["Daily (Same for all days)", "Weekly (7-day cycle)", "Monthly (31-day cycle)"])
+        self.mode_combo.currentIndexChanged.connect(self.on_mode_changed)
+        mode_hbox.addWidget(self.mode_combo)
+        
+        self.day_lbl = QLabel("Select Day:")
+        self.day_lbl.hide()
+        mode_hbox.addWidget(self.day_lbl)
+        
         self.day_combo = QComboBox()
         self.day_combo.setStyleSheet("QComboBox { background-color: white; color: black; border: 1px solid #BDBDBD; padding: 2px; }")
-        self.day_combo.addItems([f"Day {i}" for i in range(1, 31)])
         self.day_combo.currentIndexChanged.connect(self.ui_load_day_topics)
-        day_selector_hbox.addWidget(self.day_combo)
-        day_selector_hbox.addStretch()
-        self.days_layout.addLayout(day_selector_hbox)
+        self.day_combo.hide()
+        mode_hbox.addWidget(self.day_combo)
+        
+        mode_hbox.addStretch()
+        self.days_layout.addLayout(mode_hbox)
         
         self.topics_container = QVBoxLayout()
         self.days_layout.addLayout(self.topics_container)
@@ -362,11 +373,33 @@ class DashboardApp(QMainWindow):
         end_edit.setFixedWidth(80)
         name_edit = QLineEdit(name)
         name_edit.setPlaceholderText("Subject Name")
+        name_edit._original_name = name
+        
+        def on_name_changed(new_text):
+            old_name = name_edit._original_name
+            # Update memory
+            for day, topics in self.edit_days.items():
+                for i in range(len(topics)):
+                    if topics[i][0] == old_name:
+                        topics[i] = (new_text, topics[i][1])
+            # Update UI
+            for i in range(self.topics_container.count()):
+                t_hbox = self.topics_container.itemAt(i)
+                if t_hbox:
+                    combo = t_hbox.itemAt(0).widget()
+                    if combo.currentText() == old_name:
+                        if combo.findText(new_text) == -1:
+                            combo.addItem(new_text)
+                        combo.setCurrentText(new_text)
+            name_edit._original_name = new_text
+            self.update_topic_comboboxes()
+            
+        name_edit.textChanged.connect(on_name_changed)
         
         btn_del = QPushButton("X")
         btn_del.setFixedWidth(30)
         btn_del.setStyleSheet("color: red; font-weight: bold;")
-        btn_del.clicked.connect(lambda: self.delete_layout_row(hbox, self.slots_layout))
+        btn_del.clicked.connect(lambda: self.delete_slot_row(hbox))
         
         hbox.addWidget(start_edit)
         hbox.addWidget(end_edit)
@@ -375,17 +408,67 @@ class DashboardApp(QMainWindow):
         
         # Insert before the "Add" button (which is at the end)
         self.slots_layout.insertLayout(self.slots_layout.count() - 1, hbox)
+        # We don't call update_topic_comboboxes here directly if it's initial load, but it's safe to call.
+        # Actually it's fine.
+        QTimer.singleShot(10, self.update_topic_comboboxes)
+        
+    def delete_slot_row(self, layout):
+        self.delete_layout_row(layout, self.slots_layout)
+        self.update_topic_comboboxes()
+
+    def update_topic_comboboxes(self):
+        slot_names = []
+        for i in range(self.slots_layout.count() - 1):
+            s_hbox = self.slots_layout.itemAt(i)
+            if s_hbox:
+                name_widget = s_hbox.itemAt(2).widget()
+                if name_widget:
+                    slot_names.append(name_widget.text())
+                    
+        for i in range(self.topics_container.count()):
+            t_hbox = self.topics_container.itemAt(i)
+            if t_hbox:
+                combo = t_hbox.itemAt(0).widget()
+                current = combo.currentText()
+                combo.blockSignals(True)
+                combo.clear()
+                combo.addItems(slot_names)
+                if current in slot_names:
+                    combo.setCurrentText(current)
+                elif current:
+                    combo.addItem(current)
+                    combo.setCurrentText(current)
+                combo.blockSignals(False)
 
     def ui_add_topic(self, cat="Category", desc="Description"):
         # Guard against PyQt5 passing a boolean 'False' from the clicked signal
         if isinstance(cat, bool):
             cat = "Category"
             
-        from PyQt5.QtWidgets import QHBoxLayout, QLineEdit, QPushButton
+        from PyQt5.QtWidgets import QHBoxLayout, QLineEdit, QPushButton, QComboBox
         hbox = QHBoxLayout()
-        cat_edit = QLineEdit(str(cat))
-        cat_edit.setPlaceholderText("Category (e.g. DSA)")
-        cat_edit.setFixedWidth(100)
+        
+        # Harvest current slot names for binding
+        slot_names = []
+        for i in range(self.slots_layout.count() - 1):
+            s_hbox = self.slots_layout.itemAt(i)
+            if s_hbox:
+                name_widget = s_hbox.itemAt(2).widget()
+                if name_widget:
+                    slot_names.append(name_widget.text())
+                    
+        cat_edit = QComboBox()
+        cat_edit.setEditable(False)
+        cat_edit.setStyleSheet("QComboBox { background-color: white; color: black; border: 1px solid #BDBDBD; padding: 2px; }")
+        
+        if slot_names:
+            cat_edit.addItems(slot_names)
+        if str(cat) and str(cat) not in slot_names:
+            cat_edit.addItem(str(cat))
+        
+        cat_edit.setCurrentText(str(cat))
+        cat_edit.setFixedWidth(120)
+        
         desc_edit = QLineEdit(desc)
         desc_edit.setPlaceholderText("Topic description")
         
@@ -421,25 +504,52 @@ class DashboardApp(QMainWindow):
         for s in self.edit_slots:
             self.ui_add_slot(s[0], s[1], s[2])
             
-        # Trigger day load
+        days_len = len([k for k in self.edit_days.keys() if int(k) <= 31])
+        if hasattr(self, '_current_edit_day'):
+            del self._current_edit_day
+            
+        if days_len <= 7 and days_len > 1:
+            self.mode_combo.setCurrentIndex(1)
+        elif days_len > 7:
+            self.mode_combo.setCurrentIndex(2)
+        else:
+            self.mode_combo.setCurrentIndex(0)
+            
+        self.on_mode_changed()
+        
+    def on_mode_changed(self):
+        mode = self.mode_combo.currentIndex()
+        self.day_combo.blockSignals(True)
+        self.day_combo.clear()
+        if mode == 0:
+            self.day_lbl.hide()
+            self.day_combo.hide()
+            self.day_combo.addItems(["Day 1"])
+        elif mode == 1:
+            self.day_lbl.show()
+            self.day_combo.show()
+            self.day_combo.addItems([f"Day {i} (e.g. Mon-Sun)" for i in range(1, 8)])
+        elif mode == 2:
+            self.day_lbl.show()
+            self.day_combo.show()
+            self.day_combo.addItems([f"Day {i}" for i in range(1, 32)])
+        self.day_combo.blockSignals(False)
         self.ui_load_day_topics()
         
     def ui_load_day_topics(self):
-        # Save current topics back to memory before switching
         if hasattr(self, '_current_edit_day'):
             topics = []
             for i in range(self.topics_container.count()):
                 hbox = self.topics_container.itemAt(i)
                 if hbox:
-                    cat = hbox.itemAt(0).widget().text()
+                    cat = hbox.itemAt(0).widget().currentText()
                     desc = hbox.itemAt(1).widget().text()
                     topics.append([cat, desc])
             self.edit_days[self._current_edit_day] = topics
 
-        day_num = str(self.day_combo.currentIndex() + 1)
+        day_num = str(self.day_combo.currentIndex() + 1) if self.day_combo.isVisible() else "1"
         self._current_edit_day = day_num
         
-        # Clear existing topics
         while self.topics_container.count() > 0:
             item = self.topics_container.takeAt(0)
             self.delete_layout_row(item, self.topics_container)
@@ -447,13 +557,24 @@ class DashboardApp(QMainWindow):
         topics = self.edit_days.get(day_num, [])
         for t in topics:
             self.ui_add_topic(t[0], t[1])
+        
+
             
     def save_schedule_from_ui(self):
         import schedule_manager
         import study_schedule as ss
         
-        # Save currently visible topics
         self.ui_load_day_topics()
+        mode = self.mode_combo.currentIndex()
+        final_days = {}
+        
+        if mode == 0:
+            topics = self.edit_days.get("1", [])
+            final_days = {str(i): [list(t) for t in topics] for i in range(1, 32)}
+        elif mode == 1:
+            final_days = {str(i): self.edit_days.get(str(i), []) for i in range(1, 8)}
+        elif mode == 2:
+            final_days = {str(i): self.edit_days.get(str(i), []) for i in range(1, 32)}
         
         # Harvest slots
         new_slots = []
@@ -566,12 +687,16 @@ class DashboardApp(QMainWindow):
             effective_now = now - dt.timedelta(seconds=shift_seconds)
             current_pause_duration = 0
             
-        d = ss.day_number(effective_now.date())
-        total_days = max(len(ss.DAYS), 1)
-        # We loop the day number if it exceeds total_days to support repeating weekly schedules!
-        d_display = ((d - 1) % total_days) + 1
+        total_days = max(ss.DAYS.keys()) if ss.DAYS else 1
         
-        if not is_paused and (1 <= d_display <= total_days):
+        if total_days == 7:
+            d_display = effective_now.date().isoweekday()
+            total_lbl = 7
+        else:
+            d_display = effective_now.date().day
+            total_lbl = 31
+        
+        if not is_paused and (1 <= d_display <= total_lbl):
             import subprocess
             for start, end, name in ss.SLOTS:
                 target = ss.parse(start, effective_now.date())
@@ -588,51 +713,96 @@ class DashboardApp(QMainWindow):
                         except Exception:
                             pass
                             
-        self.lbl_day_top.setText(f"Day {d_display} / {total_days}")
-        self.lbl_day_big.setText(f"DAY {d_display} / {total_days}")
+        self.lbl_day_top.setText(f"Day {d_display} / {total_lbl}")
+        self.lbl_day_big.setText(f"DAY {d_display} / {total_lbl}")
         self.lbl_date.setText(now.strftime("%A, %d %b %Y"))
         self.lbl_time.setText(f"TIME {now.strftime('%H:%M:%S')}")
         
-        # Populate topics cards
+        # Populate topics cards chronologically based on SLOTS
         while self.topics_layout.count():
             child = self.topics_layout.takeAt(0)
             if child.widget():
                 child.widget().deleteLater()
                 
         color_map = {"DSA": "#00897B", "MOBILE": "#43A047", "BANK": "#9C27B0"}
-        
-        # Dynamic fallback colors for custom subjects
         fallback_colors = ["#E53935", "#1E88E5", "#F4511E", "#3949AB", "#FFB300", "#00ACC1", "#8E24AA", "#43A047"]
         
-        for cat, topic in ss.DAYS.get(d_display, []):
-            cat_upper = cat.upper()
+        # Get topics for today as a dict for easy lookup
+        day_topics = {cat.upper(): topic for cat, topic in ss.DAYS.get(d_display, [])}
+        
+        for start_str, end_str, name in ss.SLOTS:
+            name_upper = name.upper()
+            topic_desc = day_topics.get(name_upper, "General Study")
             
-            if cat_upper in color_map:
-                col = color_map[cat_upper]
+            # Determine status: Past, Current, Future
+            s_time = ss.parse(start_str, effective_now.date())
+            e_time = ss.parse(end_str, effective_now.date())
+            
+            status = "FUTURE"
+            if effective_now > e_time:
+                status = "PAST"
+            elif s_time <= effective_now <= e_time:
+                status = "CURRENT"
+            
+            if name_upper in color_map:
+                col = color_map[name_upper]
             else:
-                # Assign a consistent dynamic color based on the category name's hash
-                col_idx = hash(cat_upper) % len(fallback_colors)
+                col_idx = hash(name_upper) % len(fallback_colors)
                 col = fallback_colors[col_idx]
-            
+                
             card = QFrame()
-            card.setStyleSheet(f"""
-                QFrame {{
-                    background-color: #FFFFFF;
-                    border: 1px solid #E0E0E0;
-                    border-radius: 4px;
-                    border-left: 4px solid {col};
-                }}
-            """)
+            
+            if status == "PAST":
+                card.setStyleSheet(f"""
+                    QFrame {{
+                        background-color: #F5F5F5;
+                        border: 1px solid #EEEEEE;
+                        border-radius: 4px;
+                        border-left: 4px solid #BDBDBD;
+                    }}
+                """)
+                text_col = "#9E9E9E"
+                cat_text = f"{name_upper}\n({start_str})"
+            elif status == "CURRENT":
+                card.setStyleSheet(f"""
+                    QFrame {{
+                        background-color: #E0F2F1;
+                        border: 2px solid {col};
+                        border-radius: 4px;
+                        border-left: 6px solid {col};
+                    }}
+                """)
+                text_col = "#212121"
+                cat_text = f"▶ NOW\n{name_upper}\n({start_str})"
+            else:
+                card.setStyleSheet(f"""
+                    QFrame {{
+                        background-color: #FFFFFF;
+                        border: 1px solid #E0E0E0;
+                        border-radius: 4px;
+                        border-left: 4px solid {col};
+                    }}
+                """)
+                text_col = "#424242"
+                cat_text = f"{name_upper}\n({start_str})"
             
             card_layout = QHBoxLayout(card)
             card_layout.setContentsMargins(15, 15, 15, 15)
             
-            lbl_cat = QLabel(cat_upper)
-            lbl_cat.setStyleSheet(f"color: {col}; font-weight: bold; font-size: 13px; border: none;")
-            lbl_cat.setFixedWidth(80)
+            lbl_cat = QLabel(cat_text)
+            if status == "PAST":
+                lbl_cat.setStyleSheet(f"color: #9E9E9E; font-weight: bold; font-size: 12px; border: none;")
+            else:
+                lbl_cat.setStyleSheet(f"color: {col}; font-weight: bold; font-size: 13px; border: none;")
+            lbl_cat.setMinimumWidth(120)
+            lbl_cat.setMaximumWidth(160)
+            lbl_cat.setWordWrap(True)
             
-            lbl_top = QLabel(topic)
-            lbl_top.setStyleSheet("color: #424242; font-size: 13px; border: none;")
+            lbl_top = QLabel(topic_desc)
+            if status == "CURRENT":
+                lbl_top.setStyleSheet(f"color: {text_col}; font-weight: bold; font-size: 14px; border: none;")
+            else:
+                lbl_top.setStyleSheet(f"color: {text_col}; font-size: 13px; border: none;")
             lbl_top.setWordWrap(True)
             
             card_layout.addWidget(lbl_cat)
