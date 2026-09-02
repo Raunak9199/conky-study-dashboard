@@ -9,7 +9,7 @@ if [ ! -d ".venv" ]; then
         echo "Creating virtual environment..."
         python3 -m venv .venv
         .venv/bin/pip install --upgrade pip
-        .venv/bin/pip install PyQt5
+        .venv/bin/pip install PyQt5 "qrcode[pil]"
         ;;
       * ) 
         echo "Skipping installation. Cannot run without dependencies. Exiting."

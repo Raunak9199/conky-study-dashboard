@@ -89,16 +89,17 @@ class DashboardApp(QMainWindow):
         self.btn_sch.setStyleSheet(nav_style)
         self.btn_prog = QPushButton("📈 Progress")
         self.btn_prog.setStyleSheet(nav_style)
-        self.btn_res = QPushButton("📖 Resources")
-        self.btn_res.setStyleSheet(nav_style)
+        self.btn_sync = QPushButton("📱 Mobile Sync")
+        self.btn_sync.setStyleSheet(nav_style)
         
         self.sidebar_layout.addWidget(self.btn_dash)
         self.sidebar_layout.addWidget(self.btn_sch)
         self.sidebar_layout.addWidget(self.btn_prog)
-        self.sidebar_layout.addWidget(self.btn_res)
+        self.sidebar_layout.addWidget(self.btn_sync)
         
         self.btn_dash.clicked.connect(lambda: self.stacked_widget.setCurrentIndex(0))
         self.btn_sch.clicked.connect(lambda: self.stacked_widget.setCurrentIndex(1))
+        self.btn_sync.clicked.connect(self.show_sync_qr)
         
         self.sidebar_layout.addStretch()
         
@@ -860,6 +861,66 @@ class DashboardApp(QMainWindow):
         else:
             self.btn_pause.setText("Pause")
             self.btn_pause.setStyleSheet("QPushButton { background-color: #E53935; color: white; border-radius: 4px; font-weight: bold; border: none; } QPushButton:hover { background-color: #D32F2F; }")
+
+    def show_sync_qr(self):
+        from PyQt5.QtWidgets import QDialog, QVBoxLayout, QLabel
+        from PyQt5.QtGui import QPixmap, QImage
+        import socket
+        import json
+        import qrcode
+        from pathlib import Path
+        
+        # Get local IP
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        try:
+            s.connect(("8.8.8.8", 80))
+            ip = s.getsockname()[0]
+        except Exception:
+            ip = "127.0.0.1"
+        finally:
+            s.close()
+            
+        # Get Token
+        token = ""
+        port = 8080
+        config_path = Path.home() / ".config/conky-study/sync_config.json"
+        if config_path.exists():
+            try:
+                with open(config_path, "r") as f:
+                    data = json.load(f)
+                    token = data.get("token", "")
+                    port = data.get("port", 8080)
+            except Exception:
+                pass
+                
+        sync_data = json.dumps({"ip": ip, "port": port, "token": token})
+        
+        qr = qrcode.QRCode(box_size=10, border=4)
+        qr.add_data(sync_data)
+        qr.make(fit=True)
+        img = qr.make_image(fill_color="black", back_color="white").convert("RGBA")
+        
+        data = img.tobytes("raw", "RGBA")
+        qim = QImage(data, img.width, img.height, QImage.Format_RGBA8888)
+        pixmap = QPixmap.fromImage(qim)
+        
+        dlg = QDialog(self)
+        dlg.setWindowTitle("Mobile Sync QR Code")
+        dlg.resize(400, 450)
+        
+        vbox = QVBoxLayout(dlg)
+        lbl_info = QLabel(f"Scan this QR code from the Flutter app.\\nIP: {ip} | Port: {port}")
+        lbl_info.setStyleSheet("font-size: 14px; font-weight: bold; color: #424242;")
+        lbl_info.setAlignment(Qt.AlignCenter)
+        
+        lbl_qr = QLabel()
+        lbl_qr.setPixmap(pixmap)
+        lbl_qr.setAlignment(Qt.AlignCenter)
+        
+        vbox.addWidget(lbl_info)
+        vbox.addWidget(lbl_qr)
+        
+        dlg.exec_()
 
     def closeEvent(self, event):
         if hasattr(self, 'sync_server_proc') and self.sync_server_proc:
