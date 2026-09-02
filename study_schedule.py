@@ -86,11 +86,17 @@ def display():
         effective_now = now - dt.timedelta(seconds=shift_seconds)
         current_pause_duration = 0
 
-    d = day_number(effective_now.date())
-    if d < 1:
-        d = 1
-    if d > 30:
-        d = 30
+    raw_d = day_number(effective_now.date())
+    total_days = max(DAYS.keys()) if DAYS else 1
+    
+    if total_days == 7:
+        d = ((raw_d - 1) % 7) + 1
+        total_lbl = 7
+    else:
+        d = raw_d
+        if d < 1: d = 1
+        if d > 30: d = 30
+        total_lbl = 30
 
     # Notification Logic
     if not is_paused and (1 <= d <= 30):
@@ -105,7 +111,7 @@ def display():
                         subprocess.Popen([
                             "notify-send", "-u", "normal",
                             f"Study Time — {name}",
-                            f"Day {d}/30 • {start}–{end}\nStart your scheduled session now."
+                            f"Day {d}/{total_lbl} • {start}–{end}\nStart your scheduled session now."
                         ])
                     except Exception:
                         pass
@@ -130,8 +136,8 @@ def display():
         prefix = f"${{voffset {s(voff)}}}" if voff else ""
         lines.append(f"{prefix}${{goto {s(xoff)}}}{text}")
 
-    add_line("${color #3949AB}${font DejaVu Sans:bold:size=%d}30-DAY STUDY HUD${font}${color}" % fs(10), voff=40)
-    add_line("${color #D81B60}${font DejaVu Sans:bold:size=%d}DAY %%d / 30${font}${color}" % fs(22) % d)
+    add_line("${color #3949AB}${font DejaVu Sans:bold:size=%d}STUDY HUD${font}${color}" % fs(10), voff=40)
+    add_line("${color #D81B60}${font DejaVu Sans:bold:size=%d}DAY %%d / %%d${font}${color}" % fs(22) % (d, total_lbl))
     add_line("${color #757575}%s${color}" % now.strftime("%A, %d %b %Y"), voff=5)
     
     add_line("", voff=15)

@@ -5,7 +5,7 @@ import secrets
 import socketserver
 import threading
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 
@@ -83,11 +83,25 @@ class SyncRequestHandler(BaseHTTPRequestHandler):
                 date_str = state.get("date", datetime.now().strftime("%Y-%m-%d"))
                 
                 total_days = max([int(k) for k in schedule.get("days", {}).keys()] + [1])
-                dt_now = datetime.now()
-                if total_days == 7:
-                    d_display = dt_now.isoweekday()
+                
+                import study_schedule as ss
+                raw_d = ss.day_number(datetime.fromtimestamp(state.get("pause_start_timestamp", datetime.now().timestamp())).date() if is_paused else datetime.now().date())
+                # Actually simpler: just use datetime.now().date() assuming shift_seconds doesn't push us over midnight.
+                # To be exact with dashboard:
+                now = datetime.now()
+                if is_paused:
+                    effective_now = datetime.fromtimestamp(pause_start) - timedelta(seconds=shift_seconds)
                 else:
-                    d_display = dt_now.day
+                    effective_now = now - timedelta(seconds=shift_seconds)
+                
+                raw_d = ss.day_number(effective_now.date())
+                
+                if total_days == 7:
+                    d_display = ((raw_d - 1) % 7) + 1
+                else:
+                    d_display = raw_d
+                    if d_display > 30: d_display = 30
+                    if d_display < 1: d_display = 1
                     
                 payload = {
                     "protocolVersion": 1,

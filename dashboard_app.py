@@ -342,6 +342,38 @@ class DashboardApp(QMainWindow):
         
         self.scroll_layout.addWidget(self.slots_group)
         self.scroll_layout.addWidget(self.days_group)
+        
+        # JSON GROUP
+        self.json_group = QGroupBox("Advanced: JSON Import/Export")
+        self.json_group.setStyleSheet("QGroupBox { font-weight: bold; color: #424242; margin-top: 10px; }")
+        self.json_layout = QVBoxLayout()
+        self.json_group.setLayout(self.json_layout)
+        
+        json_desc = QLabel("Download a template, modify it in any text editor, and upload it back to bulk-add your timetable.")
+        json_desc.setStyleSheet("color: #757575; font-weight: normal; font-size: 11px;")
+        json_desc.setWordWrap(True)
+        self.json_layout.addWidget(json_desc)
+        
+        json_controls = QHBoxLayout()
+        self.template_combo = QComboBox()
+        self.template_combo.addItems(["Daily (Same for all days)", "Weekly (7-day cycle)", "Monthly (30-day cycle)"])
+        self.template_combo.setStyleSheet("QComboBox { background-color: white; color: black; border: 1px solid #BDBDBD; padding: 4px; }")
+        
+        btn_export = QPushButton("⬇️ Export Template")
+        btn_export.setStyleSheet("QPushButton { background-color: #E0E0E0; color: #424242; padding: 5px 10px; border-radius: 3px; border: 1px solid #BDBDBD; } QPushButton:hover { background-color: #D6D6D6; }")
+        btn_export.clicked.connect(self.export_json_template)
+        
+        btn_import = QPushButton("⬆️ Import JSON")
+        btn_import.setStyleSheet("QPushButton { background-color: #00897B; color: white; padding: 5px 10px; border-radius: 3px; font-weight: bold; } QPushButton:hover { background-color: #00695C; }")
+        btn_import.clicked.connect(self.import_json_template)
+        
+        json_controls.addWidget(self.template_combo)
+        json_controls.addWidget(btn_export)
+        json_controls.addWidget(btn_import)
+        
+        self.json_layout.addLayout(json_controls)
+        self.scroll_layout.addWidget(self.json_group)
+        
         self.scroll_layout.addStretch()
         
         scroll.setWidget(scroll_content)
@@ -529,10 +561,13 @@ class DashboardApp(QMainWindow):
         elif mode == 1:
             self.day_lbl.show()
             self.day_combo.show()
-            self.day_combo.addItems([f"Day {i} (e.g. Mon-Sun)" for i in range(1, 8)])
+            self.day_lbl.setText("Select Day:")
+            days_of_week = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+            self.day_combo.addItems([f"{days_of_week[i-1]} (Day {i})" for i in range(1, 8)])
         elif mode == 2:
             self.day_lbl.show()
             self.day_combo.show()
+            self.day_lbl.setText("Select Day:")
             self.day_combo.addItems([f"Day {i}" for i in range(1, 32)])
         self.day_combo.blockSignals(False)
         self.ui_load_day_topics()
@@ -596,6 +631,84 @@ class DashboardApp(QMainWindow):
         self.update_ui()
         from PyQt5.QtWidgets import QMessageBox
         QMessageBox.information(self, "Success", "Schedule saved successfully!")
+
+    def export_json_template(self):
+        from PyQt5.QtWidgets import QFileDialog, QMessageBox
+        import json
+        
+        mode = self.template_combo.currentIndex()
+        
+        template = {
+            "slots": [
+                ["09:00", "12:00", "Morning Block"],
+                ["13:00", "16:00", "Afternoon Block"]
+            ],
+            "days": {}
+        }
+        
+        sample_topics = [
+            ["Morning Block", "Topic for morning"],
+            ["Afternoon Block", "Topic for afternoon"]
+        ]
+        
+        if mode == 0:
+            template["days"] = {"1": sample_topics}
+        elif mode == 1:
+            template["days"] = {str(i): sample_topics for i in range(1, 8)}
+        elif mode == 2:
+            template["days"] = {str(i): sample_topics for i in range(1, 32)}
+            
+        file_path, _ = QFileDialog.getSaveFileName(self, "Save JSON Template", "", "JSON Files (*.json)")
+        if file_path:
+            try:
+                with open(file_path, 'w') as f:
+                    json.dump(template, f, indent=2)
+                QMessageBox.information(self, "Success", f"Template saved to {file_path}")
+            except Exception as e:
+                QMessageBox.critical(self, "Error", f"Failed to save template:\n{e}")
+
+    def import_json_template(self):
+        from PyQt5.QtWidgets import QFileDialog, QMessageBox
+        import json
+        import schedule_manager
+        
+        file_path, _ = QFileDialog.getOpenFileName(self, "Open JSON Template", "", "JSON Files (*.json)")
+        if file_path:
+            try:
+                with open(file_path, 'r') as f:
+                    data = json.load(f)
+                    
+                if "slots" not in data or "days" not in data:
+                    raise ValueError("JSON must contain both 'slots' and 'days' keys.")
+                    
+                self.edit_slots = data["slots"]
+                self.edit_days = {str(k): list(v) for k, v in data["days"].items()}
+                
+                # We update the internal mode combo automatically based on length
+                days_len = len([k for k in self.edit_days.keys() if int(k) <= 31])
+                if days_len <= 7 and days_len > 1:
+                    self.mode_combo.setCurrentIndex(1)
+                elif days_len > 7:
+                    self.mode_combo.setCurrentIndex(2)
+                else:
+                    self.mode_combo.setCurrentIndex(0)
+                
+                # Re-render the UI elements for edit_slots & edit_days
+                while self.slots_layout.count() > 1:
+                    item = self.slots_layout.takeAt(0)
+                    self.delete_layout_row(item, self.slots_layout)
+                    
+                for s in self.edit_slots:
+                    self.ui_add_slot(s[0], s[1], s[2])
+                    
+                self.on_mode_changed()
+                
+                # Ensure we also save and broadcast changes immediately
+                self.save_schedule_from_ui()
+                QMessageBox.information(self, "Success", "Schedule successfully imported and applied!")
+                
+            except Exception as e:
+                QMessageBox.critical(self, "Error", f"Failed to import schedule:\n{e}")
 
     def toggle_sidebar(self):
         target_width = 0 if self.sidebar_container.width() > 100 else 220
@@ -690,12 +803,18 @@ class DashboardApp(QMainWindow):
             
         total_days = max(ss.DAYS.keys()) if ss.DAYS else 1
         
+        raw_d = ss.day_number(effective_now.date())
+        
         if total_days == 7:
-            d_display = effective_now.date().isoweekday()
+            d_display = ((raw_d - 1) % 7) + 1
             total_lbl = 7
         else:
-            d_display = effective_now.date().day
-            total_lbl = 31
+            d_display = raw_d
+            if d_display > 30:
+                d_display = 30
+            elif d_display < 1:
+                d_display = 1
+            total_lbl = 30
         
         if not is_paused and (1 <= d_display <= total_lbl):
             import subprocess
