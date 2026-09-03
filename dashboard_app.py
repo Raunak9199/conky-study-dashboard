@@ -21,6 +21,10 @@ class DashboardApp(QMainWindow):
         self.setAttribute(Qt.WA_TranslucentBackground, True)
         self.is_glass_mode = False
         
+        # Floating above all (Always on Top)
+        self.is_always_on_top = True
+        self.setWindowFlag(Qt.WindowStaysOnTopHint, True)
+        
         self.setStyleSheet("""
             QMainWindow {
                 background-color: transparent;
@@ -140,6 +144,17 @@ class DashboardApp(QMainWindow):
         self.lbl_day_top.setStyleSheet("color: #424242; font-weight: bold; font-size: 13px;")
         self.lbl_day_top.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         
+        self.btn_pin = QPushButton("📌 Pinned")
+        self.btn_pin.setFixedSize(85, 30)
+        self.btn_pin.setStyleSheet("""
+            QPushButton {
+                font-size: 11px; font-weight: bold; border-radius: 15px;
+                background: #E0F2F1; color: #004D40; border: 1px solid #00897B;
+            }
+            QPushButton:hover { background: #B2DFDB; }
+        """)
+        self.btn_pin.clicked.connect(self.toggle_pin)
+        
         self.btn_glass = QPushButton("⚪ Glass Mode")
         self.btn_glass.setFixedSize(100, 30)
         self.btn_glass.setStyleSheet("QPushButton { font-size: 12px; font-weight: bold; border-radius: 15px; background: #E0E0E0; color: #424242; border: none; } QPushButton:hover { background: #D6D6D6; }")
@@ -148,6 +163,8 @@ class DashboardApp(QMainWindow):
         top_hbox.addWidget(self.btn_toggle)
         top_hbox.addWidget(self.lbl_hud)
         top_hbox.addStretch()
+        top_hbox.addWidget(self.btn_pin)
+        top_hbox.addSpacing(10)
         top_hbox.addWidget(self.btn_glass)
         top_hbox.addSpacing(15)
         top_hbox.addWidget(self.lbl_day_top)
@@ -918,6 +935,29 @@ class DashboardApp(QMainWindow):
                 }
             """)
 
+    def toggle_pin(self):
+        self.is_always_on_top = not self.is_always_on_top
+        self.setWindowFlag(Qt.WindowStaysOnTopHint, self.is_always_on_top)
+        self.show()
+        if self.is_always_on_top:
+            self.btn_pin.setText("📌 Pinned")
+            self.btn_pin.setStyleSheet("""
+                QPushButton {
+                    font-size: 11px; font-weight: bold; border-radius: 15px;
+                    background: #E0F2F1; color: #004D40; border: 1px solid #00897B;
+                }
+                QPushButton:hover { background: #B2DFDB; }
+            """)
+        else:
+            self.btn_pin.setText("📍 Unpinned")
+            self.btn_pin.setStyleSheet("""
+                QPushButton {
+                    font-size: 11px; font-weight: bold; border-radius: 15px;
+                    background: #E0E0E0; color: #616161; border: 1px solid #BDBDBD;
+                }
+                QPushButton:hover { background: #D6D6D6; }
+            """)
+
     def switch_view(self, idx):
         self.stacked_widget.setCurrentIndex(idx)
         for i, btn in enumerate(self.nav_buttons):
@@ -1019,7 +1059,6 @@ class DashboardApp(QMainWindow):
             QTableWidgetItem, QHeaderView, QFrame, QFileDialog, QMessageBox
         )
         import analytics_manager as am
-        am.seed_history_if_needed(ss.SLOTS, ss.DAYS)
         
         self.progress_layout = QVBoxLayout(self.progress_view)
         self.progress_layout.setContentsMargins(0, 0, 0, 0)
@@ -1343,7 +1382,13 @@ class DashboardApp(QMainWindow):
         for row_idx, s in enumerate(sessions):
             t_win = f"{s.get('start_time', '')} - {s.get('end_time', '')}"
             dur_mins = s.get("duration_minutes", 0)
-            dur_str = f"{dur_mins // 60}h {dur_mins % 60}m" if dur_mins >= 60 else f"{dur_mins}m"
+            dur_secs = s.get("duration_seconds")
+            if dur_secs is not None and dur_secs < 60:
+                dur_str = f"{dur_secs}s"
+            elif dur_mins >= 60:
+                dur_str = f"{dur_mins // 60}h {dur_mins % 60}m"
+            else:
+                dur_str = f"{dur_mins}m"
             pause_str = f"{s.get('pause_seconds', 0) // 60}m"
             
             self.session_table.setItem(row_idx, 0, QTableWidgetItem(s.get("date", "")))

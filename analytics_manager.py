@@ -200,66 +200,6 @@ def stop_session():
     save_history(data)
     return completed_session
 
-def seed_history_if_needed(slots=None, days_raw=None):
-    data = load_history()
-    if data.get("sessions") and len(data["sessions"]) >= 3:
-        return
-    
-    today = dt.date.today()
-    default_slots = slots or [
-        ("06:00", "08:30", "DSA"),
-        ("10:00", "12:30", "Mobile"),
-        ("15:45", "17:45", "Bank")
-    ]
-    
-    new_sessions = []
-    daily_summaries = {}
-    
-    for days_ago in range(6, 0, -1):
-        target_date = today - dt.timedelta(days=days_ago)
-        d_str = str(target_date)
-        day_mins = 0
-        day_pause = 300 * days_ago
-        
-        for idx, (s_start, s_end, s_name) in enumerate(default_slots):
-            try:
-                t1 = dt.datetime.strptime(s_start, "%H:%M")
-                t2 = dt.datetime.strptime(s_end, "%H:%M")
-                dur = int((t2 - t1).total_seconds() // 60)
-            except Exception:
-                dur = 120
-                
-            actual_dur = int(dur * (0.85 + (idx * 0.05)))
-            day_mins += actual_dur
-            
-            sess_entry = {
-                "id": f"seed_{d_str}_{idx}",
-                "date": d_str,
-                "start_time": s_start,
-                "end_time": s_end,
-                "duration_minutes": actual_dur,
-                "subject": s_name,
-                "topic": f"Unit {idx+1} Mastery",
-                "status": "COMPLETED",
-                "pause_seconds": 180 * (idx + 1)
-            }
-            new_sessions.append(sess_entry)
-            
-        daily_summaries[d_str] = {
-            "actual_minutes": day_mins,
-            "pause_seconds": day_pause,
-            "sessions_count": len(default_slots)
-        }
-        
-    if data.get("sessions"):
-        for s in data["sessions"]:
-            if s not in new_sessions:
-                new_sessions.insert(0, s)
-                
-    data["sessions"] = new_sessions
-    data["daily_summaries"].update(daily_summaries)
-    save_history(data)
-
 def get_metrics(timeframe="7_days", planned_daily_minutes=360):
     data = load_history()
     sessions = data.get("sessions", [])
