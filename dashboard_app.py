@@ -49,6 +49,7 @@ class DashboardApp(QMainWindow):
         self.timer.start(1000)
         
         self.update_ui()
+        self.switch_view(0)
         
     def setup_sidebar(self):
         self.sidebar_container = QFrame()
@@ -82,37 +83,39 @@ class DashboardApp(QMainWindow):
             }
             QPushButton:hover { background-color: #F5F5F5; color: #004D40; }
         """
+        self.nav_default_style = nav_style
         
         self.btn_dash = QPushButton("🪟 Dashboard")
-        self.btn_dash.setStyleSheet(nav_style)
         self.btn_sch = QPushButton("📅 Schedule")
-        self.btn_sch.setStyleSheet(nav_style)
         self.btn_prog = QPushButton("📈 Progress")
-        self.btn_prog.setStyleSheet(nav_style)
         self.btn_sync = QPushButton("📱 Mobile Sync")
         self.btn_sync.setStyleSheet(nav_style)
+        
+        self.nav_buttons = [self.btn_dash, self.btn_sch, self.btn_prog]
         
         self.sidebar_layout.addWidget(self.btn_dash)
         self.sidebar_layout.addWidget(self.btn_sch)
         self.sidebar_layout.addWidget(self.btn_prog)
         self.sidebar_layout.addWidget(self.btn_sync)
         
-        self.btn_dash.clicked.connect(lambda: self.stacked_widget.setCurrentIndex(0))
-        self.btn_sch.clicked.connect(lambda: self.stacked_widget.setCurrentIndex(1))
+        self.btn_dash.clicked.connect(lambda: self.switch_view(0))
+        self.btn_sch.clicked.connect(lambda: self.switch_view(1))
+        self.btn_prog.clicked.connect(lambda: self.switch_view(2))
         self.btn_sync.clicked.connect(self.show_sync_qr)
         
         self.sidebar_layout.addStretch()
         
-        # Start Session Button
-        btn_start = QPushButton("Start Session")
-        btn_start.setFixedSize(160, 40)
-        btn_start.setStyleSheet("""
+        # Start Session ("Mark Online") Button
+        self.btn_start = QPushButton("🟢 Start Session")
+        self.btn_start.setFixedSize(160, 40)
+        self.btn_start.setStyleSheet("""
             QPushButton {
-                background-color: #004D40; color: white; border-radius: 8px; font-weight: bold; font-size: 13px;
+                background-color: #004D40; color: white; border-radius: 8px; font-weight: bold; font-size: 13px; border: none;
             }
             QPushButton:hover { background-color: #00695C; }
         """)
-        self.sidebar_layout.addWidget(btn_start, alignment=Qt.AlignCenter)
+        self.btn_start.clicked.connect(self.toggle_study_session)
+        self.sidebar_layout.addWidget(self.btn_start, alignment=Qt.AlignCenter)
         
         self.main_layout.addWidget(self.sidebar_container)
         
@@ -255,6 +258,33 @@ class DashboardApp(QMainWindow):
         
         now_vbox.addLayout(pause_hbox)
         
+        now_vbox.addSpacing(10)
+        sess_divider = QFrame()
+        sess_divider.setFrameShape(QFrame.HLine)
+        sess_divider.setStyleSheet("color: #F5F5F5; border: none;")
+        now_vbox.addWidget(sess_divider)
+        now_vbox.addSpacing(6)
+        
+        sess_header = QLabel("SESSION TRACKER")
+        sess_header.setStyleSheet("color: #757575; font-weight: bold; font-size: 10px; border: none;")
+        now_vbox.addWidget(sess_header)
+        
+        self.lbl_now_session_status = QLabel("⚪ OFFLINE")
+        self.lbl_now_session_status.setStyleSheet("font-size: 12px; font-weight: bold; color: #757575; border: none;")
+        now_vbox.addWidget(self.lbl_now_session_status)
+        now_vbox.addSpacing(4)
+        
+        self.btn_now_session = QPushButton("🟢 Mark Online (Start)")
+        self.btn_now_session.setFixedHeight(32)
+        self.btn_now_session.setStyleSheet("""
+            QPushButton {
+                background-color: #004D40; color: white; border-radius: 4px; font-weight: bold; border: none; font-size: 11px;
+            }
+            QPushButton:hover { background-color: #00695C; }
+        """)
+        self.btn_now_session.clicked.connect(self.toggle_study_session)
+        now_vbox.addWidget(self.btn_now_session)
+        
         content_hbox.addLayout(today_vbox, stretch=2)
         content_hbox.addSpacing(30)
         content_hbox.addWidget(self.now_card, alignment=Qt.AlignTop)
@@ -268,6 +298,11 @@ class DashboardApp(QMainWindow):
         self.schedule_editor_view = QWidget()
         self.setup_schedule_editor()
         self.stacked_widget.addWidget(self.schedule_editor_view)
+        
+        # --- VIEW 2: Progress & Analytics ---
+        self.progress_view = QWidget()
+        self.setup_progress_view()
+        self.stacked_widget.addWidget(self.progress_view)
         
         self.lbl_time = QLabel("TIME 16:36:18")
         self.lbl_time.setStyleSheet("color: #757575; font-weight: bold; font-size: 11px;")
@@ -293,6 +328,42 @@ class DashboardApp(QMainWindow):
         scroll_content.setObjectName("ScrollContent")
         scroll_content.setStyleSheet("#ScrollContent { background: transparent; }")
         self.scroll_layout = QVBoxLayout(scroll_content)
+        
+        # PROFILES GROUP
+        self.profiles_group = QGroupBox("Schedule Profile")
+        self.profiles_group.setStyleSheet("QGroupBox { font-weight: bold; color: #424242; }")
+        profiles_vbox = QVBoxLayout(self.profiles_group)
+        
+        prof_hbox1 = QHBoxLayout()
+        prof_hbox1.addWidget(QLabel("Select Profile:"))
+        self.profile_combo = QComboBox()
+        self.profile_combo.setStyleSheet("QComboBox { background-color: white; color: black; border: 1px solid #BDBDBD; padding: 2px; }")
+        self.profile_combo.currentIndexChanged.connect(self.on_profile_selected)
+        prof_hbox1.addWidget(self.profile_combo)
+        
+        self.lbl_active_prof = QLabel("")
+        self.lbl_active_prof.setStyleSheet("color: #43A047; font-weight: bold;")
+        prof_hbox1.addWidget(self.lbl_active_prof)
+        prof_hbox1.addStretch()
+        
+        prof_hbox2 = QHBoxLayout()
+        btn_new_prof = QPushButton("+ New Profile")
+        btn_new_prof.clicked.connect(self.ui_new_profile)
+        btn_del_prof = QPushButton("Delete Profile")
+        btn_del_prof.setStyleSheet("color: red;")
+        btn_del_prof.clicked.connect(self.ui_delete_profile)
+        self.btn_make_active = QPushButton("Make ACTIVE")
+        self.btn_make_active.setStyleSheet("background-color: #43A047; color: white; font-weight: bold;")
+        self.btn_make_active.clicked.connect(self.ui_make_active)
+        
+        prof_hbox2.addWidget(btn_new_prof)
+        prof_hbox2.addWidget(btn_del_prof)
+        prof_hbox2.addStretch()
+        prof_hbox2.addWidget(self.btn_make_active)
+        
+        profiles_vbox.addLayout(prof_hbox1)
+        profiles_vbox.addLayout(prof_hbox2)
+        self.scroll_layout.addWidget(self.profiles_group)
         
         # SLOTS GROUP
         self.slots_group = QGroupBox("Time Slots (Applies to all days)")
@@ -527,7 +598,28 @@ class DashboardApp(QMainWindow):
 
     def load_editor_data(self):
         import schedule_manager
-        self.edit_slots, self.edit_days = schedule_manager.load_schedule()
+        self.profiles_data = schedule_manager.load_profiles()
+        self.active_profile_name = self.profiles_data.get("active_profile", "Default Plan")
+        
+        self.profile_combo.blockSignals(True)
+        self.profile_combo.clear()
+        self.profile_combo.addItems(list(self.profiles_data.get("profiles", {}).keys()))
+        
+        idx = self.profile_combo.findText(self.active_profile_name)
+        if idx >= 0:
+            self.profile_combo.setCurrentIndex(idx)
+        self.profile_combo.blockSignals(False)
+        
+        self.load_profile_into_editor(self.active_profile_name)
+
+    def load_profile_into_editor(self, prof_name):
+        pdata = self.profiles_data.get("profiles", {}).get(prof_name)
+        if not pdata:
+            return
+            
+        self.edit_slots = pdata.get("slots", [])
+        self.edit_days = {k: list(v) for k, v in pdata.get("days", {}).items()}
+        mode = pdata.get("mode", 0)
         
         # Clear existing slots in UI
         while self.slots_layout.count() > 1: # keep the add button
@@ -537,16 +629,79 @@ class DashboardApp(QMainWindow):
         for s in self.edit_slots:
             self.ui_add_slot(s[0], s[1], s[2])
             
-        days_len = len([k for k in self.edit_days.keys() if int(k) <= 31])
         if hasattr(self, '_current_edit_day'):
             del self._current_edit_day
             
-        if days_len <= 7 and days_len > 1:
-            self.mode_combo.setCurrentIndex(1)
-        elif days_len > 7:
-            self.mode_combo.setCurrentIndex(2)
+        self.mode_combo.setCurrentIndex(mode)
+        self.ui_load_day_topics()
+        
+        if prof_name == self.active_profile_name:
+            self.lbl_active_prof.setText("(ACTIVE)")
+            self.btn_make_active.hide()
         else:
-            self.mode_combo.setCurrentIndex(0)
+            self.lbl_active_prof.setText("")
+            self.btn_make_active.show()
+
+    def on_profile_selected(self):
+        prof_name = self.profile_combo.currentText()
+        if prof_name:
+            self.load_profile_into_editor(prof_name)
+
+    def ui_new_profile(self):
+        from PyQt5.QtWidgets import QInputDialog, QMessageBox
+        name, ok = QInputDialog.getText(self, "New Profile", "Enter profile name:")
+        if ok and name.strip():
+            name = name.strip()
+            if name in self.profiles_data.get("profiles", {}):
+                QMessageBox.warning(self, "Error", "Profile name already exists.")
+                return
+            
+            # Start fresh
+            self.profiles_data["profiles"][name] = {
+                "mode": 0,
+                "slots": [],
+                "days": {"1": []}
+            }
+            import schedule_manager
+            schedule_manager.save_profiles(self.profiles_data)
+            
+            self.profile_combo.blockSignals(True)
+            self.profile_combo.addItem(name)
+            self.profile_combo.setCurrentText(name)
+            self.profile_combo.blockSignals(False)
+            self.load_profile_into_editor(name)
+
+    def ui_delete_profile(self):
+        from PyQt5.QtWidgets import QMessageBox
+        prof_name = self.profile_combo.currentText()
+        if prof_name == self.active_profile_name:
+            QMessageBox.warning(self, "Error", "Cannot delete the active profile.")
+            return
+            
+        reply = QMessageBox.question(self, "Confirm Delete", f"Delete profile '{prof_name}'?", QMessageBox.Yes | QMessageBox.No)
+        if reply == QMessageBox.Yes:
+            del self.profiles_data["profiles"][prof_name]
+            import schedule_manager
+            schedule_manager.save_profiles(self.profiles_data)
+            
+            self.profile_combo.blockSignals(True)
+            self.profile_combo.removeItem(self.profile_combo.currentIndex())
+            self.profile_combo.setCurrentText(self.active_profile_name)
+            self.profile_combo.blockSignals(False)
+            self.load_profile_into_editor(self.active_profile_name)
+
+    def ui_make_active(self):
+        from PyQt5.QtWidgets import QMessageBox
+        prof_name = self.profile_combo.currentText()
+        self.profiles_data["active_profile"] = prof_name
+        self.active_profile_name = prof_name
+        
+        # Save active into schedule.json and profiles.json
+        self.save_schedule_from_ui()
+        
+        self.lbl_active_prof.setText("(ACTIVE)")
+        self.btn_make_active.hide()
+        QMessageBox.information(self, "Success", f"Profile '{prof_name}' is now active! Sync your mobile app to receive it.")
             
         self.on_mode_changed()
         
@@ -606,7 +761,7 @@ class DashboardApp(QMainWindow):
         
         if mode == 0:
             topics = self.edit_days.get("1", [])
-            final_days = {str(i): [list(t) for t in topics] for i in range(1, 32)}
+            final_days = {"1": [list(t) for t in topics]}
         elif mode == 1:
             final_days = {str(i): self.edit_days.get(str(i), []) for i in range(1, 8)}
         elif mode == 2:
@@ -622,15 +777,22 @@ class DashboardApp(QMainWindow):
                 name = hbox.itemAt(2).widget().text()
                 new_slots.append([start, end, name])
                 
-        schedule_manager.save_schedule(new_slots, self.edit_days)
-        
-        # Live update study_schedule variables
-        ss.SLOTS = [(s[0], s[1], s[2]) for s in new_slots]
-        ss.DAYS = {int(k): [(t[0], t[1]) for t in v] for k, v in self.edit_days.items()}
-        
-        self.update_ui()
+        prof_name = self.profile_combo.currentText()
+        if prof_name in self.profiles_data.get("profiles", {}):
+            self.profiles_data["profiles"][prof_name]["mode"] = mode
+            self.profiles_data["profiles"][prof_name]["slots"] = new_slots
+            self.profiles_data["profiles"][prof_name]["days"] = {k: list(v) for k, v in final_days.items()}
+            schedule_manager.save_profiles(self.profiles_data)
+            
+        if prof_name == self.active_profile_name:
+            schedule_manager.save_schedule(new_slots, final_days)
+            # Live update study_schedule variables
+            ss.SLOTS = [(s[0], s[1], s[2]) for s in new_slots]
+            ss.DAYS = {int(k): [(t[0], t[1]) for t in v] for k, v in final_days.items()}
+            self.update_ui()
+            
         from PyQt5.QtWidgets import QMessageBox
-        QMessageBox.information(self, "Success", "Schedule saved successfully!")
+        QMessageBox.information(self, "Success", "Profile saved successfully!")
 
     def export_json_template(self):
         from PyQt5.QtWidgets import QFileDialog, QMessageBox
@@ -755,6 +917,473 @@ class DashboardApp(QMainWindow):
                     border-right: 1px solid #E0E0E0;
                 }
             """)
+
+    def switch_view(self, idx):
+        self.stacked_widget.setCurrentIndex(idx)
+        for i, btn in enumerate(self.nav_buttons):
+            if i == idx:
+                btn.setStyleSheet("""
+                    QPushButton {
+                        text-align: left; padding: 10px; border: none;
+                        background-color: #E0F2F1; font-size: 13px;
+                        color: #004D40; font-weight: bold; border-radius: 5px;
+                        border-left: 4px solid #004D40;
+                    }
+                """)
+            else:
+                btn.setStyleSheet(self.nav_default_style)
+        if idx == 2 and hasattr(self, 'refresh_progress_view'):
+            self.refresh_progress_view()
+
+    def toggle_study_session(self):
+        import analytics_manager as am
+        active_sess = am.get_active_session()
+        now = dt.datetime.now()
+        
+        if active_sess.get("is_active"):
+            completed = am.stop_session()
+            mins = completed.get("duration_minutes", 0) if completed else 0
+            subj = completed.get("subject", "General Study")
+            tot_today = am.get_subject_time_today(subj)
+            tot_mins = tot_today.get("minutes", mins)
+            th, tm = divmod(tot_mins, 60)
+            tot_str = f"{th}h {tm}m" if th > 0 else f"{tm}m"
+            
+            from PyQt5.QtWidgets import QMessageBox
+            QMessageBox.information(
+                self, "Session Completed",
+                f"🎉 Great job! Study session saved:\n\n"
+                f"• Subject: {subj}\n"
+                f"• This Session: {mins} minutes\n"
+                f"• Total Studied for {subj} Today: {tot_str}\n"
+                f"• Status: {completed.get('status')}"
+            )
+        else:
+            state = ss.get_state() or {}
+            shift_seconds = state.get("shift_seconds", 0)
+            is_paused = state.get("is_paused", False)
+            if is_paused:
+                pause_start = state.get("pause_start_timestamp", now.timestamp())
+                effective_now = dt.datetime.fromtimestamp(pause_start) - dt.timedelta(seconds=shift_seconds)
+            else:
+                effective_now = now - dt.timedelta(seconds=shift_seconds)
+                
+            total_days = max(ss.DAYS.keys()) if ss.DAYS else 1
+            raw_d = ss.day_number(effective_now.date())
+            d_display = ((raw_d - 1) % 7) + 1 if total_days == 7 else min(30, max(1, raw_d))
+            day_topics = {cat.upper(): topic for cat, topic in ss.DAYS.get(d_display, [])}
+            
+            cur = ss.current_slot(effective_now)
+            if cur:
+                s_start, s_end, s_name, _ = cur
+                s_topic = day_topics.get(s_name.upper(), "Scheduled Session")
+            else:
+                s_start, s_end = now.strftime("%H:%M"), ""
+                s_name = "Self Study"
+                s_topic = "Independent Focus"
+                
+            prev_info = am.get_subject_time_today(s_name)
+            prev_mins = prev_info.get("minutes", 0)
+            
+            am.start_session(subject=s_name, topic=s_topic, slot_start=s_start, slot_end=s_end)
+            if is_paused:
+                am.update_session_pause(True)
+                
+            from PyQt5.QtWidgets import QMessageBox
+            if prev_mins > 0:
+                ph, pm = divmod(prev_mins, 60)
+                p_str = f"{ph}h {pm}m" if ph > 0 else f"{pm}m"
+                msg = (
+                    f"🟢 Resuming Study Session for {s_name}!\n\n"
+                    f"• Previous progress today: {p_str}\n"
+                    f"• Topic: {s_topic}\n\n"
+                    f"The timer continues accumulating your total study time for this subject."
+                )
+            else:
+                msg = (
+                    f"🟢 You are now ONLINE & STUDYING!\n\n"
+                    f"• Subject: {s_name}\n"
+                    f"• Topic: {s_topic}\n\n"
+                    f"Your active study time is being accurately recorded."
+                )
+            QMessageBox.information(self, "Session Started", msg)
+            
+        self.update_ui()
+        if hasattr(self, 'refresh_progress_view'):
+            self.refresh_progress_view()
+
+    def setup_progress_view(self):
+        from PyQt5.QtWidgets import (
+            QScrollArea, QWidget, QVBoxLayout, QHBoxLayout, QLabel,
+            QPushButton, QComboBox, QProgressBar, QTableWidget,
+            QTableWidgetItem, QHeaderView, QFrame, QFileDialog, QMessageBox
+        )
+        import analytics_manager as am
+        am.seed_history_if_needed(ss.SLOTS, ss.DAYS)
+        
+        self.progress_layout = QVBoxLayout(self.progress_view)
+        self.progress_layout.setContentsMargins(0, 0, 0, 0)
+        
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setStyleSheet("QScrollArea { border: none; background: transparent; }")
+        
+        scroll_content = QWidget()
+        scroll_content.setObjectName("ProgScrollContent")
+        scroll_content.setStyleSheet("#ProgScrollContent { background: transparent; }")
+        layout = QVBoxLayout(scroll_content)
+        layout.setContentsMargins(10, 10, 20, 30)
+        layout.setSpacing(20)
+        
+        # 1. Header Section
+        header_hbox = QHBoxLayout()
+        title_vbox = QVBoxLayout()
+        lbl_title = QLabel("📈 Progress & Analytics")
+        lbl_title.setStyleSheet("color: #004D40; font-weight: bold; font-size: 22px;")
+        lbl_subtitle = QLabel("Track verified study hours, completion rates, and historical logs")
+        lbl_subtitle.setStyleSheet("color: #757575; font-size: 12px;")
+        title_vbox.addWidget(lbl_title)
+        title_vbox.addWidget(lbl_subtitle)
+        header_hbox.addLayout(title_vbox)
+        header_hbox.addStretch()
+        
+        header_hbox.addWidget(QLabel("Timeframe:"))
+        self.prog_timeframe_combo = QComboBox()
+        self.prog_timeframe_combo.setStyleSheet("""
+            QComboBox {
+                background-color: white; color: black; border: 1px solid #BDBDBD;
+                border-radius: 4px; padding: 4px 10px; font-weight: bold; font-size: 12px;
+            }
+        """)
+        self.prog_timeframe_combo.addItem("This Week (7 Days)", "7_days")
+        self.prog_timeframe_combo.addItem("Today", "today")
+        self.prog_timeframe_combo.addItem("This Month (30 Days)", "30_days")
+        self.prog_timeframe_combo.addItem("All Time", "all")
+        self.prog_timeframe_combo.currentIndexChanged.connect(self.refresh_progress_view)
+        header_hbox.addWidget(self.prog_timeframe_combo)
+        
+        btn_csv = QPushButton("📥 Export CSV")
+        btn_csv.setStyleSheet("background-color: #E0E0E0; color: #424242; padding: 5px 12px; border-radius: 4px; font-weight: bold; border: 1px solid #BDBDBD;")
+        btn_csv.clicked.connect(self.export_progress_csv)
+        header_hbox.addWidget(btn_csv)
+        
+        btn_json = QPushButton("📥 Export JSON")
+        btn_json.setStyleSheet("background-color: #E0E0E0; color: #424242; padding: 5px 12px; border-radius: 4px; font-weight: bold; border: 1px solid #BDBDBD;")
+        btn_json.clicked.connect(self.export_progress_json)
+        header_hbox.addWidget(btn_json)
+        
+        layout.addLayout(header_hbox)
+        
+        # 2. KPI Stat Cards Row
+        kpi_hbox = QHBoxLayout()
+        kpi_hbox.setSpacing(15)
+        
+        def create_kpi_card(title, value_obj, sub_obj, accent_color="#004D40"):
+            card = QFrame()
+            card.setStyleSheet(f"""
+                QFrame {{
+                    background-color: #FFFFFF;
+                    border: 1px solid #E0E0E0;
+                    border-radius: 8px;
+                    border-left: 4px solid {accent_color};
+                }}
+            """)
+            cvbox = QVBoxLayout(card)
+            cvbox.setContentsMargins(15, 12, 15, 12)
+            lbl_t = QLabel(title)
+            lbl_t.setStyleSheet("color: #757575; font-size: 11px; font-weight: bold; border: none;")
+            cvbox.addWidget(lbl_t)
+            cvbox.addWidget(value_obj)
+            cvbox.addWidget(sub_obj)
+            return card
+            
+        self.kpi_time_val = QLabel("0h 00m")
+        self.kpi_time_val.setStyleSheet("color: #004D40; font-size: 22px; font-weight: bold; border: none;")
+        self.kpi_time_sub = QLabel("Target: 0h 00m")
+        self.kpi_time_sub.setStyleSheet("color: #757575; font-size: 11px; border: none;")
+        card1 = create_kpi_card("⏱️ TOTAL STUDY TIME", self.kpi_time_val, self.kpi_time_sub, "#004D40")
+        
+        self.kpi_comp_val = QLabel("0.0%")
+        self.kpi_comp_val.setStyleSheet("color: #1E88E5; font-size: 22px; font-weight: bold; border: none;")
+        self.kpi_comp_bar = QProgressBar()
+        self.kpi_comp_bar.setFixedHeight(8)
+        self.kpi_comp_bar.setTextVisible(False)
+        self.kpi_comp_bar.setStyleSheet("""
+            QProgressBar { background: #E0E0E0; border-radius: 4px; border: none; }
+            QProgressBar::chunk { background: #1E88E5; border-radius: 4px; }
+        """)
+        card2 = create_kpi_card("🎯 COMPLETION RATE", self.kpi_comp_val, self.kpi_comp_bar, "#1E88E5")
+        
+        self.kpi_streak_val = QLabel("0 Days")
+        self.kpi_streak_val.setStyleSheet("color: #FB8C00; font-size: 22px; font-weight: bold; border: none;")
+        self.kpi_streak_sub = QLabel("Consecutive study streak")
+        self.kpi_streak_sub.setStyleSheet("color: #757575; font-size: 11px; border: none;")
+        card3 = create_kpi_card("🔥 ACTIVE STREAK", self.kpi_streak_val, self.kpi_streak_sub, "#FB8C00")
+        
+        self.kpi_focus_val = QLabel("100%")
+        self.kpi_focus_val.setStyleSheet("color: #43A047; font-size: 22px; font-weight: bold; border: none;")
+        self.kpi_focus_sub = QLabel("Pauses: 0m total")
+        self.kpi_focus_sub.setStyleSheet("color: #757575; font-size: 11px; border: none;")
+        card4 = create_kpi_card("⚡ FOCUS EFFICIENCY", self.kpi_focus_val, self.kpi_focus_sub, "#43A047")
+        
+        kpi_hbox.addWidget(card1)
+        kpi_hbox.addWidget(card2)
+        kpi_hbox.addWidget(card3)
+        kpi_hbox.addWidget(card4)
+        layout.addLayout(kpi_hbox)
+        
+        # 3. Middle Visual Analytics Section
+        charts_hbox = QHBoxLayout()
+        charts_hbox.setSpacing(15)
+        
+        # Daily Activity Card
+        daily_card = QFrame()
+        daily_card.setStyleSheet("QFrame { background-color: #FFFFFF; border: 1px solid #E0E0E0; border-radius: 8px; }")
+        daily_vbox = QVBoxLayout(daily_card)
+        daily_vbox.setContentsMargins(15, 15, 15, 15)
+        lbl_daily_h = QLabel("📅 Daily Study Activity")
+        lbl_daily_h.setStyleSheet("color: #212121; font-weight: bold; font-size: 14px; border: none;")
+        lbl_daily_s = QLabel("Comparison of daily study hours (Planned vs. Actual)")
+        lbl_daily_s.setStyleSheet("color: #757575; font-size: 11px; border: none;")
+        daily_vbox.addWidget(lbl_daily_h)
+        daily_vbox.addWidget(lbl_daily_s)
+        daily_vbox.addSpacing(10)
+        
+        self.daily_chart_container = QVBoxLayout()
+        daily_vbox.addLayout(self.daily_chart_container)
+        daily_vbox.addStretch()
+        charts_hbox.addWidget(daily_card, stretch=3)
+        
+        # Subject Distribution Card
+        subj_card = QFrame()
+        subj_card.setStyleSheet("QFrame { background-color: #FFFFFF; border: 1px solid #E0E0E0; border-radius: 8px; }")
+        subj_vbox = QVBoxLayout(subj_card)
+        subj_vbox.setContentsMargins(15, 15, 15, 15)
+        lbl_subj_h = QLabel("📚 Subject Distribution")
+        lbl_subj_h.setStyleSheet("color: #212121; font-weight: bold; font-size: 14px; border: none;")
+        lbl_subj_s = QLabel("Time spent and share by subject")
+        lbl_subj_s.setStyleSheet("color: #757575; font-size: 11px; border: none;")
+        subj_vbox.addWidget(lbl_subj_h)
+        subj_vbox.addWidget(lbl_subj_s)
+        subj_vbox.addSpacing(10)
+        
+        self.subj_container = QVBoxLayout()
+        subj_vbox.addLayout(self.subj_container)
+        subj_vbox.addStretch()
+        charts_hbox.addWidget(subj_card, stretch=2)
+        
+        layout.addLayout(charts_hbox)
+        
+        # 4. Session Logs & Reports Table Card
+        table_card = QFrame()
+        table_card.setStyleSheet("QFrame { background-color: #FFFFFF; border: 1px solid #E0E0E0; border-radius: 8px; }")
+        table_vbox = QVBoxLayout(table_card)
+        table_vbox.setContentsMargins(15, 15, 15, 15)
+        
+        lbl_tbl_h = QLabel("📋 Verified Study Sessions & Reports")
+        lbl_tbl_h.setStyleSheet("color: #212121; font-weight: bold; font-size: 14px; border: none;")
+        lbl_tbl_s = QLabel("Complete chronological history of study sessions")
+        lbl_tbl_s.setStyleSheet("color: #757575; font-size: 11px; border: none;")
+        table_vbox.addWidget(lbl_tbl_h)
+        table_vbox.addWidget(lbl_tbl_s)
+        table_vbox.addSpacing(10)
+        
+        self.session_table = QTableWidget()
+        self.session_table.setColumnCount(7)
+        self.session_table.setHorizontalHeaderLabels([
+            "Date", "Time", "Subject", "Topic", "Duration", "Status", "Pause"
+        ])
+        self.session_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
+        self.session_table.horizontalHeader().setSectionResizeMode(3, QHeaderView.Stretch)
+        self.session_table.setAlternatingRowColors(True)
+        self.session_table.setStyleSheet("""
+            QTableWidget {
+                border: 1px solid #EEEEEE;
+                gridline-color: #F0F0F0;
+                font-size: 12px;
+                background-color: white;
+                alternate-background-color: #FAFAFA;
+            }
+            QHeaderView::section {
+                background-color: #ECEFF1;
+                color: #37474F;
+                font-weight: bold;
+                font-size: 11px;
+                padding: 6px;
+                border: none;
+                border-right: 1px solid #CFD8DC;
+            }
+        """)
+        self.session_table.setMinimumHeight(240)
+        table_vbox.addWidget(self.session_table)
+        
+        layout.addWidget(table_card)
+        
+        scroll.setWidget(scroll_content)
+        self.progress_layout.addWidget(scroll)
+        
+        self.refresh_progress_view()
+
+    def refresh_progress_view(self):
+        from PyQt5.QtWidgets import QLabel, QProgressBar, QHBoxLayout, QVBoxLayout, QTableWidgetItem
+        from PyQt5.QtCore import Qt
+        import analytics_manager as am
+        
+        if not hasattr(self, 'prog_timeframe_combo'):
+            return
+            
+        timeframe = self.prog_timeframe_combo.currentData() or "7_days"
+        
+        planned_mins = 0
+        for s_start, s_end, _ in ss.SLOTS:
+            try:
+                t1 = dt.datetime.strptime(s_start, "%H:%M")
+                t2 = dt.datetime.strptime(s_end, "%H:%M")
+                planned_mins += int((t2 - t1).total_seconds() // 60)
+            except Exception:
+                planned_mins += 120
+        if planned_mins <= 0: planned_mins = 360
+        
+        m = am.get_metrics(timeframe=timeframe, planned_daily_minutes=planned_mins)
+        
+        # 1. Update KPI cards
+        self.kpi_time_val.setText(m["total_actual_hours_str"])
+        self.kpi_time_sub.setText(f"Target: {m['total_planned_hours_str']}")
+        
+        comp_pct = m["completion_rate_pct"]
+        self.kpi_comp_val.setText(f"{comp_pct}%")
+        self.kpi_comp_bar.setValue(int(min(100, comp_pct)))
+        
+        streak = m["streak_days"]
+        self.kpi_streak_val.setText(f"{streak} Day{'s' if streak != 1 else ''}")
+        self.kpi_streak_sub.setText("🔥 On a roll!" if streak >= 3 else "Keep it up!")
+        
+        self.kpi_focus_val.setText(f"{m['focus_efficiency_pct']}%")
+        self.kpi_focus_sub.setText(f"Pauses: {m['total_pause_minutes']}m total")
+        
+        # 2. Update Daily Activity Chart
+        while self.daily_chart_container.count():
+            child = self.daily_chart_container.takeAt(0)
+            if child.widget(): child.widget().deleteLater()
+            elif child.layout():
+                while child.layout().count():
+                    sub = child.layout().takeAt(0)
+                    if sub.widget(): sub.widget().deleteLater()
+                    
+        daily_points = m.get("daily_chart", [])
+        max_hrs = max([p["planned_hours"] for p in daily_points] + [p["actual_hours"] for p in daily_points] + [1.0])
+        
+        for p in daily_points[-7:]:
+            row = QHBoxLayout()
+            lbl_d = QLabel(p["label"])
+            lbl_d.setFixedWidth(60)
+            lbl_d.setStyleSheet("font-size: 11px; font-weight: bold; color: #424242; border: none;")
+            
+            bar = QProgressBar()
+            bar.setFixedHeight(12)
+            bar.setTextVisible(False)
+            bar_val = int((p["actual_hours"] / max_hrs) * 100)
+            bar.setValue(min(100, bar_val))
+            bar.setStyleSheet("""
+                QProgressBar { background: #ECEFF1; border-radius: 6px; border: none; }
+                QProgressBar::chunk { background: #00897B; border-radius: 6px; }
+            """)
+            
+            lbl_val = QLabel(f"{p['actual_hours']}h / {p['planned_hours']}h")
+            lbl_val.setFixedWidth(85)
+            lbl_val.setStyleSheet("font-size: 11px; color: #616161; border: none;")
+            
+            row.addWidget(lbl_d)
+            row.addWidget(bar)
+            row.addWidget(lbl_val)
+            self.daily_chart_container.addLayout(row)
+            
+        # 3. Update Subject Distribution
+        while self.subj_container.count():
+            child = self.subj_container.takeAt(0)
+            if child.widget(): child.widget().deleteLater()
+            elif child.layout():
+                while child.layout().count():
+                    sub = child.layout().takeAt(0)
+                    if sub.widget(): sub.widget().deleteLater()
+                    
+        subjs = m.get("subject_breakdown", [])
+        if not subjs:
+            lbl_none = QLabel("No subject data in this period")
+            lbl_none.setStyleSheet("color: #9E9E9E; font-size: 12px; border: none;")
+            self.subj_container.addWidget(lbl_none)
+        else:
+            for s in subjs:
+                row = QVBoxLayout()
+                row.setSpacing(2)
+                top_row = QHBoxLayout()
+                lbl_name = QLabel(s["subject"])
+                lbl_name.setStyleSheet("font-size: 12px; font-weight: bold; color: #212121; border: none;")
+                lbl_pct = QLabel(f"{s['hours_str']} ({s['pct']}%)")
+                lbl_pct.setStyleSheet(f"font-size: 11px; font-weight: bold; color: {s['color']}; border: none;")
+                top_row.addWidget(lbl_name)
+                top_row.addStretch()
+                top_row.addWidget(lbl_pct)
+                
+                bar = QProgressBar()
+                bar.setFixedHeight(8)
+                bar.setTextVisible(False)
+                bar.setValue(int(s["pct"]))
+                bar.setStyleSheet(f"""
+                    QProgressBar {{ background: #ECEFF1; border-radius: 4px; border: none; }}
+                    QProgressBar::chunk {{ background: {s['color']}; border-radius: 4px; }}
+                """)
+                row.addLayout(top_row)
+                row.addWidget(bar)
+                self.subj_container.addLayout(row)
+                
+        # 4. Update Session Table
+        sessions = m.get("sessions", [])
+        self.session_table.setRowCount(len(sessions))
+        for row_idx, s in enumerate(sessions):
+            t_win = f"{s.get('start_time', '')} - {s.get('end_time', '')}"
+            dur_mins = s.get("duration_minutes", 0)
+            dur_str = f"{dur_mins // 60}h {dur_mins % 60}m" if dur_mins >= 60 else f"{dur_mins}m"
+            pause_str = f"{s.get('pause_seconds', 0) // 60}m"
+            
+            self.session_table.setItem(row_idx, 0, QTableWidgetItem(s.get("date", "")))
+            self.session_table.setItem(row_idx, 1, QTableWidgetItem(t_win))
+            self.session_table.setItem(row_idx, 2, QTableWidgetItem(s.get("subject", "")))
+            self.session_table.setItem(row_idx, 3, QTableWidgetItem(s.get("topic", "")))
+            self.session_table.setItem(row_idx, 4, QTableWidgetItem(dur_str))
+            
+            status_item = QTableWidgetItem(s.get("status", "COMPLETED"))
+            if s.get("status") == "COMPLETED":
+                status_item.setForeground(Qt.darkGreen)
+            else:
+                status_item.setForeground(Qt.darkYellow)
+            self.session_table.setItem(row_idx, 5, status_item)
+            
+            self.session_table.setItem(row_idx, 6, QTableWidgetItem(pause_str))
+
+    def export_progress_csv(self):
+        from PyQt5.QtWidgets import QFileDialog, QMessageBox
+        import analytics_manager as am
+        default_name = f"study_report_{dt.date.today()}.csv"
+        path, _ = QFileDialog.getSaveFileName(self, "Export Progress Report (CSV)", default_name, "CSV Files (*.csv)")
+        if path:
+            ok, msg = am.export_csv(path)
+            if ok:
+                QMessageBox.information(self, "Export Success", f"Report successfully exported to:\n{path}")
+            else:
+                QMessageBox.warning(self, "Export Error", f"Failed to export CSV: {msg}")
+
+    def export_progress_json(self):
+        from PyQt5.QtWidgets import QFileDialog, QMessageBox
+        import analytics_manager as am
+        default_name = f"study_report_{dt.date.today()}.json"
+        path, _ = QFileDialog.getSaveFileName(self, "Export Progress Report (JSON)", default_name, "JSON Files (*.json)")
+        if path:
+            ok, msg = am.export_json(path)
+            if ok:
+                QMessageBox.information(self, "Export Success", f"Report successfully exported to:\n{path}")
+            else:
+                QMessageBox.warning(self, "Export Error", f"Failed to export JSON: {msg}")
             
     def toggle_pause(self):
         now = dt.datetime.now()
@@ -779,6 +1408,8 @@ class DashboardApp(QMainWindow):
             state["pause_start_timestamp"] = now.timestamp()
             
         ss.save_state(state)
+        import analytics_manager as am
+        am.update_session_pause(state.get("is_paused", False))
         self.update_ui()
 
     def update_ui(self):
@@ -928,6 +1559,18 @@ class DashboardApp(QMainWindow):
             card_layout.addWidget(lbl_cat)
             card_layout.addWidget(lbl_top)
             
+            # Show verified time studied today for this subject if any
+            import analytics_manager as am
+            subj_stat = am.get_subject_time_today(name)
+            if subj_stat.get("minutes", 0) > 0:
+                sm = subj_stat["minutes"]
+                sh, smin = divmod(sm, 60)
+                sd_str = f"{sh}h {smin}m" if sh > 0 else f"{smin}m"
+                lbl_done = QLabel(f"✓ {sd_str} studied")
+                lbl_done.setStyleSheet("color: #00897B; font-size: 11px; font-weight: bold; border: none; background-color: #E0F2F1; padding: 3px 7px; border-radius: 4px;")
+                card_layout.addStretch()
+                card_layout.addWidget(lbl_done)
+            
             self.topics_layout.addWidget(card)
             
         cur = ss.current_slot(effective_now)
@@ -980,6 +1623,75 @@ class DashboardApp(QMainWindow):
         else:
             self.btn_pause.setText("Pause")
             self.btn_pause.setStyleSheet("QPushButton { background-color: #E53935; color: white; border-radius: 4px; font-weight: bold; border: none; } QPushButton:hover { background-color: #D32F2F; }")
+
+        # Update Session Tracker Status & Stopwatch
+        import analytics_manager as am
+        active_sess = am.get_active_session()
+        if active_sess.get("is_active"):
+            elapsed = active_sess.get("elapsed_seconds", 0)
+            prev_sec = active_sess.get("previous_subject_seconds", 0)
+            tot_sec = active_sess.get("total_subject_seconds", elapsed)
+            subj = active_sess.get("subject", "Study")
+            
+            # Format elapsed for this session
+            eh, erem = divmod(elapsed, 3600)
+            em, es = divmod(erem, 60)
+            sess_str = f"{eh:02d}:{em:02d}:{es:02d}" if eh > 0 else f"{em:02d}:{es:02d}"
+            
+            # Format total today for this subject
+            th, trem = divmod(tot_sec, 3600)
+            tm, ts = divmod(trem, 60)
+            tot_str = f"{th:02d}:{tm:02d}:{ts:02d}" if th > 0 else f"{tm:02d}:{ts:02d}"
+            
+            if active_sess.get("is_paused"):
+                if prev_sec > 0:
+                    status_text = f"⏸️ PAUSED • {tot_str} ({subj})\n[+{sess_str} this session]"
+                else:
+                    status_text = f"⏸️ PAUSED • {sess_str}"
+                status_color = "#FB8C00"
+            else:
+                if prev_sec > 0:
+                    status_text = f"🟢 ONLINE • {tot_str} ({subj})\n[+{sess_str} this session]"
+                else:
+                    status_text = f"🟢 ONLINE • {sess_str}"
+                status_color = "#00897B"
+                
+            self.lbl_now_session_status.setText(status_text)
+            self.lbl_now_session_status.setStyleSheet(f"font-size: 11px; font-weight: bold; color: {status_color}; border: none;")
+            self.btn_now_session.setText("🔴 Stop Session")
+            self.btn_now_session.setStyleSheet("QPushButton { background-color: #D32F2F; color: white; border-radius: 4px; font-weight: bold; border: none; font-size: 11px; } QPushButton:hover { background-color: #C62828; }")
+            self.btn_start.setText("🔴 Stop Session")
+            self.btn_start.setStyleSheet("QPushButton { background-color: #D32F2F; color: white; border-radius: 8px; font-weight: bold; font-size: 13px; border: none; } QPushButton:hover { background-color: #C62828; }")
+        else:
+            cur_slot = ss.current_slot(effective_now)
+            curr_subj = cur_slot[2] if cur_slot else ""
+            prev_stat = am.get_subject_time_today(curr_subj) if curr_subj else {"seconds": 0, "minutes": 0}
+            
+            if prev_stat["seconds"] > 0:
+                pmins = prev_stat["minutes"]
+                ph, pm = divmod(pmins, 60)
+                p_str = f"{ph}h {pm}m" if ph > 0 else f"{pm}m"
+                self.lbl_now_session_status.setText(f"⚪ OFFLINE • {curr_subj} Today: {p_str}")
+                self.lbl_now_session_status.setStyleSheet("font-size: 11px; font-weight: bold; color: #00897B; border: none;")
+                self.btn_now_session.setText(f"🟢 Resume {curr_subj} ({p_str})")
+                self.btn_now_session.setStyleSheet("QPushButton { background-color: #00897B; color: white; border-radius: 4px; font-weight: bold; border: none; font-size: 11px; } QPushButton:hover { background-color: #00695C; }")
+                self.btn_start.setText("🟢 Resume Session")
+                self.btn_start.setStyleSheet("QPushButton { background-color: #00897B; color: white; border-radius: 8px; font-weight: bold; font-size: 13px; border: none; } QPushButton:hover { background-color: #00695C; }")
+            else:
+                self.lbl_now_session_status.setText("⚪ OFFLINE")
+                self.lbl_now_session_status.setStyleSheet("font-size: 12px; font-weight: bold; color: #757575; border: none;")
+                self.btn_now_session.setText("🟢 Mark Online (Start)")
+                self.btn_now_session.setStyleSheet("QPushButton { background-color: #004D40; color: white; border-radius: 4px; font-weight: bold; border: none; font-size: 11px; } QPushButton:hover { background-color: #00695C; }")
+                self.btn_start.setText("🟢 Start Session")
+                self.btn_start.setStyleSheet("QPushButton { background-color: #004D40; color: white; border-radius: 8px; font-weight: bold; font-size: 13px; border: none; } QPushButton:hover { background-color: #00695C; }")
+            
+        # Refresh progress view if currently active
+        if hasattr(self, 'stacked_widget') and self.stacked_widget.currentIndex() == 2:
+            if not hasattr(self, '_prog_refresh_tick'):
+                self._prog_refresh_tick = 0
+            self._prog_refresh_tick += 1
+            if self._prog_refresh_tick % 5 == 0:
+                self.refresh_progress_view()
 
     def show_sync_qr(self):
         from PyQt5.QtWidgets import QDialog, QVBoxLayout, QLabel
