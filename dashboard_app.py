@@ -11,6 +11,83 @@ from PyQt5.QtCore import QTimer, Qt, QPropertyAnimation, QEasingCurve
 import study_schedule as ss
 import schedule_manager
 
+def set_x11_pinned(window_id, pinned=True):
+    try:
+        import ctypes
+        import subprocess
+        x11 = ctypes.cdll.LoadLibrary("libX11.so.6")
+        
+        class XClientMessageEvent(ctypes.Structure):
+            _fields_ = [
+                ("type", ctypes.c_int),
+                ("serial", ctypes.c_ulong),
+                ("send_event", ctypes.c_int),
+                ("display", ctypes.c_void_p),
+                ("window", ctypes.c_ulong),
+                ("message_type", ctypes.c_ulong),
+                ("format", ctypes.c_int),
+                ("data", ctypes.c_long * 5)
+            ]
+
+        class XEvent(ctypes.Union):
+            _fields_ = [
+                ("type", ctypes.c_int),
+                ("xclient", XClientMessageEvent),
+                ("pad", ctypes.c_long * 24)
+            ]
+
+        ClientMessage = 33
+        SubstructureRedirectMask = (1 << 20)
+        SubstructureNotifyMask = (1 << 19)
+
+        d = x11.XOpenDisplay(None)
+        if not d:
+            return False
+            
+        root = x11.XDefaultRootWindow(d)
+        atom_desktop = x11.XInternAtom(d, b"_NET_WM_DESKTOP", False)
+        atom_state = x11.XInternAtom(d, b"_NET_WM_STATE", False)
+        atom_sticky = x11.XInternAtom(d, b"_NET_WM_STATE_STICKY", False)
+        atom_above = x11.XInternAtom(d, b"_NET_WM_STATE_ABOVE", False)
+        
+        def send_msg(atom_type, d0, d1=0):
+            ev = XEvent()
+            ev.type = ClientMessage
+            ev.xclient.type = ClientMessage
+            ev.xclient.serial = 0
+            ev.xclient.send_event = 1
+            ev.xclient.display = d
+            ev.xclient.window = int(window_id)
+            ev.xclient.message_type = atom_type
+            ev.xclient.format = 32
+            ev.xclient.data[0] = d0
+            ev.xclient.data[1] = d1
+            ev.xclient.data[2] = 0
+            ev.xclient.data[3] = 1
+            x11.XSendEvent(d, root, False, ctypes.c_long(SubstructureRedirectMask | SubstructureNotifyMask), ctypes.byref(ev))
+        
+        if pinned:
+            send_msg(atom_desktop, ctypes.c_long(-1).value, 1)
+            send_msg(atom_state, 1, atom_sticky)
+            send_msg(atom_state, 1, atom_above)
+        else:
+            cur_d = 0
+            try:
+                out = subprocess.check_output(["xprop", "-root", "_NET_CURRENT_DESKTOP"]).decode()
+                cur_d = int(out.split("=")[-1].strip())
+            except Exception:
+                pass
+            send_msg(atom_desktop, cur_d, 1)
+            send_msg(atom_state, 0, atom_sticky)
+            send_msg(atom_state, 0, atom_above)
+            
+        x11.XFlush(d)
+        x11.XCloseDisplay(d)
+        return True
+    except Exception as e:
+        print(f"Error setting X11 pinned state: {e}")
+        return False
+
 class DashboardApp(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -21,9 +98,8 @@ class DashboardApp(QMainWindow):
         self.setAttribute(Qt.WA_TranslucentBackground, True)
         self.is_glass_mode = False
         
-        # Floating above all (Always on Top)
-        self.is_always_on_top = True
-        self.setWindowFlag(Qt.WindowStaysOnTopHint, True)
+        # Floating / Sticky (Pinned) state
+        self.is_pinned = True
         
         self.setStyleSheet("""
             QMainWindow {
@@ -54,6 +130,7 @@ class DashboardApp(QMainWindow):
         
         self.update_ui()
         self.switch_view(0)
+        QTimer.singleShot(150, lambda: self.set_pinned(True))
         
     def setup_sidebar(self):
         self.sidebar_container = QFrame()
@@ -935,11 +1012,14 @@ class DashboardApp(QMainWindow):
                 }
             """)
 
+    def set_pinned(self, pinned=True):
+        self.is_pinned = pinned
+        set_x11_pinned(int(self.winId()), pinned=pinned)
+
     def toggle_pin(self):
-        self.is_always_on_top = not self.is_always_on_top
-        self.setWindowFlag(Qt.WindowStaysOnTopHint, self.is_always_on_top)
-        self.show()
-        if self.is_always_on_top:
+        self.is_pinned = not getattr(self, "is_pinned", True)
+        self.set_pinned(self.is_pinned)
+        if self.is_pinned:
             self.btn_pin.setText("📌 Pinned")
             self.btn_pin.setStyleSheet("""
                 QPushButton {
